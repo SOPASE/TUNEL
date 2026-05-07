@@ -401,7 +401,7 @@ function MCarga(p){
     ),
     h('div',{style:{display:'flex',gap:8,justifyContent:'flex-end'}},
       h(Btn,{onClick:p.onClose,color:C.m},'Cancelar'),
-      h(Btn,{onClick:function(){if(!+f.units)return;var lote=f.lote||nextLote(f.productName);saveLastLote(lote);p.onSave(Object.assign({},p.c,f,{units:+f.units,weightPerUnit:+f.weightPerUnit,totalLbs:lbs,lbs:lbs,productLoadTime:Date.now(),status:'libre',lote:lote}))},disabled:!+f.units||!f.productName,color:C.g},'Cargar Coche #'+p.c.number)
+      h(Btn,{onClick:function(){if(!+f.units)return;var lote=f.lote||nextLote(f.productName);saveLastLote(lote);p.onSave(Object.assign({},p.c,f,{units:+f.units,weightPerUnit:+f.weightPerUnit,totalLbs:lbs,lbs:lbs,productLoadTime:Date.now(),status:'libre',lote:lote}));p.onClose();},disabled:!+f.units||!f.productName,color:C.g},'Cargar Coche #'+p.c.number)
     )
   );
 }
@@ -1458,6 +1458,7 @@ function MTunnelForm(p){
   function save(){
     if(!f.name.trim())return;
     p.onSave(Object.assign({},f,{id:f.id||gid(),capacityCoches:+f.capacityCoches,targetTemp:+f.targetTemp,checkIntervalMin:+f.checkIntervalMin,targetTimeHours:+f.targetTimeHours}));
+    p.onClose();
   }
   var COLORS=['#00e888','#00c8ff','#ffaa00','#ff3366','#aa88ff','#00ffcc','#ff8800'];
   return h(Modal,{title:ini?'Editar Tunel — '+ini.name:'Nuevo Tunel',onClose:p.onClose,width:500},
