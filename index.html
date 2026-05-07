@@ -83,6 +83,35 @@ function sc(d){try{localStorage.setItem(CK,JSON.stringify(Object.assign({},d,{_a
 function lc(){try{return JSON.parse(localStorage.getItem(CK)||'{}')}catch(e){return{}}}
 function scfg(d){try{localStorage.setItem(CFG,JSON.stringify(d))}catch(e){}}
 function lcfg(){try{return JSON.parse(localStorage.getItem(CFG)||'{}')}catch(e){return{}}}
+// ── SONIDOS DE ALARMA (Web Audio API) ───────────────────
+function playAlarmSound(type){
+  try{
+    var ctx=new (window.AudioContext||window.webkitAudioContext)();
+    function beep(freq,start,dur,vol,wave){
+      var osc=ctx.createOscillator();var gain=ctx.createGain();
+      osc.connect(gain);gain.connect(ctx.destination);
+      osc.frequency.value=freq;osc.type=wave||'sine';
+      gain.gain.setValueAtTime(0.001,ctx.currentTime+start);
+      gain.gain.linearRampToValueAtTime(vol||0.3,ctx.currentTime+start+0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+start+dur);
+      osc.start(ctx.currentTime+start);osc.stop(ctx.currentTime+start+dur+0.05);
+    }
+    if(type==='product-ready'){
+      // ✅ Coche listo — 3 pitidos ascendentes (celebratorio)
+      beep(700,0,0.12,0.35,'sine');
+      beep(880,0.18,0.12,0.4,'sine');
+      beep(1100,0.36,0.22,0.5,'sine');
+    }else if(type==='outside-alert'){
+      // ⏱ Afuera del límite — 2 pitidos urgentes descendentes
+      beep(900,0,0.18,0.45,'square');
+      beep(600,0.28,0.28,0.45,'square');
+    }else if(type==='temp-check'){
+      // 🌡 Revisión de temperatura — 1 pitido suave
+      beep(520,0,0.35,0.25,'sine');
+    }
+  }catch(e){}
+}
+
 // Script URL global — la pone el admin, la leen todos
 var GURL_KEY='fc_gurl_v1';
 function getGUrl(){try{return localStorage.getItem(GURL_KEY)||''}catch(e){return''}}
@@ -1236,7 +1265,7 @@ function App(){
   var _sb=useState(null);var showBatch=_sb[0],setShowBatch=_sb[1];
   var _sv=useState(null);var showVerif=_sv[0],setShowVerif=_sv[1];
   var _srt=useState(false);var showResumen=_srt[0],setShowResumen=_srt[1];
-  var _ai=useState([{role:'assistant',content:'🤖 Hola! Soy el Asistente IA de FREEZE CONTROL.\n\nTengo acceso en tiempo real a:\n✅ Estado de todos los tuneles y coches\n🌡 Registros de temperatura (aire y producto)\n🔔 Alarmas activas y pendientes\n📊 Historico de ciclos, tiempos y libras procesadas\n⏱ Analisis de puntualidad de liberacion\n\nPuedo darte indicadores como:\n• ✅ Tunel X: saliendo a tiempo (9.2h vs 9h)\n• ⚠️ Coche #3 lleva 52min afuera del limite\n• 🔴 Temperatura critica en Amoniaco 2\n• 📈 Rendimiento: 12,450 lbs esta semana\n\nConfigura la URL del Apps Script en Gestion → Config para activarme.\n¿Sobre que quieres que analice?'}]);var aiMsgs=_ai[0],setAiMsgs=_ai[1];
+  var _ai=useState([{role:'assistant',content:'🤖 FREEZE CONTROL IA — Modo Local Activo\n\n✅ Sin API key · Sin internet · Análisis instantáneo\n\nTengo acceso en tiempo real a todos los datos de la planta:\n\n📊 Estado de túneles y coches\n🌡 Registros de temperatura (aire y producto)\n🔔 Alarmas activas y pendientes\n⚖ Libras en proceso e historial\n⏱ Tiempos y puntualidad de liberación\n\nPrueba preguntarme cosas como:\n• "Dame un resumen del turno"\n• "¿Qué túneles van retrasados?"\n• "¿Hay alarmas críticas?"\n• "¿Cuántas libras hay en proceso?"\n• "¿Qué coche lleva más tiempo afuera?"\n• "Dame recomendaciones"\n• "¿Cómo están las temperaturas?"\n• "Rendimiento del historial"\n\n¿En qué te ayudo?'}]);var aiMsgs=_ai[0],setAiMsgs=_ai[1];
   var _al2=useState(false);var aiLoad=_al2[0],setAiLoad=_al2[1];
   var _pwa=useState(false);var pwaOk=_pwa[0],setPwaOk=_pwa[1];
   var _pwaI=useState(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches);var pwaInst=_pwaI[0],setPwaInst=_pwaI[1];
@@ -1279,6 +1308,8 @@ function App(){
         }
       });
       if(na.length){setAlarms(function(p){return p.concat(na)});na.forEach(function(a){
+        // 🔊 Sonido diferenciado por tipo de alarma
+        playAlarmSound(a.type);
         if(typeof Notification!=='undefined'&&Notification.permission==='granted'){
           var nopts={body:a.msg,tag:a.id,icon:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b1525'/%3E%3Ctext y='52' x='4' font-size='52' fill='%2300c8ff'%3E%E2%9D%84%3C/text%3E%3C/svg%3E",badge:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='52' x='4' font-size='52'%3E❄%3C/text%3E%3C/svg%3E",requireInteraction:a.type==='product-ready'||a.type==='outside-alert',vibrate:[200,100,200,100,200],silent:false};
           if(navigator.serviceWorker&&navigator.serviceWorker.controller){navigator.serviceWorker.ready.then(function(r){r.showNotification('FREEZE CONTROL',nopts)}).catch(function(){new Notification('FREEZE CONTROL',nopts)})}else{new Notification('FREEZE CONTROL',nopts)}
@@ -1367,60 +1398,251 @@ function App(){
   function ackAlarm(id){setAlarms(function(p){return p.map(function(a){return a.id===id?Object.assign({},a,{ack:true}):a})})}
   function saveCoche(c){var nc=editC?coches.map(function(x){return x.id===c.id?c:x}):[...coches,c];coR.current=nc;setCoches(nc);autoSync(nc,null);setShowForm(false);setEditC(null)}
   function saveTunnel(t){var nt=editT?tunnels.map(function(x){return x.id===t.id?t:x}):[...tunnels,t];tuR.current=nt;setTunnels(nt);autoSync(null,nt);setShowTForm(false);setEditT(null)}
+  // ══════════════════════════════════════════════════════
+  // MOTOR IA LOCAL — análisis inteligente sin API key
+  // ══════════════════════════════════════════════════════
+  function localAIAnalysis(msg){
+    var n=Date.now();
+    var msgL=msg.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    // Snapshots de datos
+    var enT=coches.filter(function(c){return c.status==='en-tunel'});
+    var libres=coches.filter(function(c){return c.status==='libre'});
+    var master=coches.filter(function(c){return c.status==='masterizando'});
+    var libresConProd=libres.filter(function(c){return(c.units||0)>0});
+    var unack=alarms.filter(function(a){return !a.ack});
+    var lbsActual=enT.reduce(function(a,c){return a+(c.totalLbs||0)},0);
+    var cs=curShift();
+    var shiftLabel=SHIFTS.find(function(s){return s.id===cs}).l;
+    // Detección de intención
+    var isResumen=/resumen|completo|turno|todo|general|como (va|esta|van)|situacion|overview|dame un/.test(msgL);
+    var isTemp=/temp|termico|grado|calor|frio|aire|producto.*temp|registro.*temp/.test(msgL);
+    var isTime=/tiempo|a tiempo|saliendo|retras|hora|demor|cuanto.*falt|falt.*cuanto/.test(msgL);
+    var isLbs=/libra|lbs|peso|kilogram|tonela|cantidad|proceso|cuanto.*product|product.*cuanto/.test(msgL);
+    var isAlarma=/alarm|critica|pendiente|urgente|alert|hay.*alarma|alarma.*hay/.test(msgL);
+    var isHist=/histori|rendimiento|ciclo|estadist|semana|promedi|record|cuantos.*ciclo|ciclo.*total/.test(msgL);
+    var isAfuera=/afuera|fuera|limite|tiempo.*fuera|coche.*afuera|mas.*tiempo|quien.*mas/.test(msgL);
+    var isRecomend=/recomend|consejo|que (hago|hacer)|sugier|mejor|idea|accion/.test(msgL);
+    var isCapac=/capaci|lleno|espacio|cuantos.*entran|lugar|ocup/.test(msgL);
+    var lines=[];
+    var header='🤖 FREEZE CONTROL IA  —  '+new Date().toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'})+' · Turno '+shiftLabel;
+    lines.push(header);
+    lines.push('─────────────────────────────────────');
+
+    // ── RESUMEN COMPLETO ──
+    if(isResumen||(!isTemp&&!isTime&&!isLbs&&!isAlarma&&!isHist&&!isAfuera&&!isRecomend&&!isCapac)){
+      lines.push('📊 ESTADO GENERAL DEL TURNO\n');
+      // Túneles
+      tunnels.forEach(function(t){
+        var inT2=coches.filter(function(c){return c.tunnelId===t.id&&c.status==='en-tunel'});
+        var lbs2=inT2.reduce(function(a,c){return a+(c.totalLbs||0)},0);
+        var ocup=Math.round(inT2.length/t.capacityCoches*100);
+        var icon=ocup>=90?'🔴':ocup>=60?'🟡':'🟢';
+        lines.push(icon+' '+t.name);
+        lines.push('   '+inT2.length+'/'+t.capacityCoches+' coches · '+lbs2.toLocaleString()+' lbs · Obj: '+t.targetTemp+'°C / '+t.targetTimeHours+'h');
+        var lastLog=tLogs.filter(function(l){return l.tunnelId===t.id}).sort(function(a,b){return b.timestamp-a.timestamp})[0];
+        if(lastLog){var sinceMin=Math.round((n-lastLog.timestamp)/60000);lines.push('   🌡 Último registro: hace '+sinceMin+'min (aire:'+(lastLog.airTemp!=null?lastLog.airTemp+'°C':'—')+' / prod:'+(lastLog.prodTemp!=null?lastLog.prodTemp+'°C':'—')+')');}
+        else{lines.push('   🌡 Sin registros de temperatura');}
+        // Coches con su progreso
+        inT2.forEach(function(c){
+          var el=n-c.entryTime;var pr=pct(el,t.targetTimeHours*3600000);
+          var tIcon=pr>=100?'🔴':pr>=80?'🟡':'✅';
+          lines.push('   '+tIcon+' #'+c.number+' '+c.productName+' ('+elp(el)+' · '+pr+'%) — '+(c.totalLbs||0).toLocaleString()+' lbs');
+        });
+        lines.push('');
+      });
+      // Coches masterizando
+      if(master.length){
+        lines.push('🔵 MASTERIZANDO ('+master.length+'):');
+        master.forEach(function(c){var mt=c.masterTime?Math.round((n-c.masterTime)/60000):0;lines.push('   #'+c.number+' '+c.productName+' · '+mt+'min en master')});
+        lines.push('');
+      }
+      // Libres con producto
+      if(libresConProd.length){
+        lines.push('⚪ LIBRES CON PRODUCTO ('+libresConProd.length+'):');
+        libresConProd.forEach(function(c){var ms=c.productLoadTime?n-c.productLoadTime:0;var oColor=ms>=MAX_OUT*60000?'⚠️':'✅';lines.push('   '+oColor+' #'+c.number+' '+c.productName+' — '+(c.totalLbs||0).toLocaleString()+' lbs · '+(ms>0?elpS(ms)+' desde carga':'sin tiempo'))});
+        lines.push('');
+      }
+      // Resumen numérico
+      lines.push('📦 TOTALES: '+enT.length+' en túnel · '+master.length+' master · '+libres.length+' libres');
+      lines.push('⚖ Lbs en proceso: '+lbsActual.toLocaleString()+' lbs');
+      lines.push('🔔 Alarmas pendientes: '+(unack.length?'⚠️ '+unack.length:'✅ Ninguna'));
+    }
+
+    // ── TEMPERATURAS ──
+    if(isTemp){
+      lines.push('🌡 ANÁLISIS DE TEMPERATURAS\n');
+      tunnels.forEach(function(t){
+        var logs=tLogs.filter(function(l){return l.tunnelId===t.id}).sort(function(a,b){return b.timestamp-a.timestamp});
+        var last=logs[0];
+        lines.push('━ '+t.name+' (obj: '+t.targetTemp+'°C)');
+        if(!logs.length){lines.push('  ❌ Sin registros de temperatura');lines.push('');return;}
+        var sinceMin=Math.round((n-last.timestamp)/60000);
+        var stIcon=sinceMin>t.checkIntervalMin?'⚠️':'✅';
+        lines.push('  '+stIcon+' Último registro: hace '+sinceMin+'min');
+        if(last.airTemp!=null){var aD=Math.abs(last.airTemp-t.targetTemp);var aIcon=aD<=2?'✅':aD<=5?'⚠️':'🔴';lines.push('  '+aIcon+' Aire: '+last.airTemp+'°C  (Δ'+aD.toFixed(1)+'°C '+(last.airTemp<=t.targetTemp?'OK':'sobre objetivo')+')');}
+        if(last.prodTemp!=null){var pOK=last.prodTemp<=t.targetTemp+1;lines.push('  '+(pOK?'✅':'⏳')+' Producto: '+last.prodTemp+'°C '+(pOK?'— ¡LISTO!':'— en proceso'));}
+        // Historial de estados
+        var fallas=logs.slice(0,10).filter(function(l){return l.estado==='falla'}).length;
+        var defrost=logs.slice(0,10).filter(function(l){return l.estado==='defrost'}).length;
+        if(fallas)lines.push('  🔴 '+fallas+' fallas en últimos 10 registros');
+        if(defrost)lines.push('  🟡 '+defrost+' defrost en últimos 10 registros');
+        lines.push('');
+      });
+    }
+
+    // ── TIEMPOS / A TIEMPO ──
+    if(isTime){
+      lines.push('⏱ ANÁLISIS DE TIEMPOS\n');
+      if(!enT.length){lines.push('No hay coches en túnel actualmente.');}
+      else{
+        var listos=0,demorados=0,encamino=0;
+        enT.forEach(function(c){
+          var t=tunnels.find(function(x){return x.id===c.tunnelId});if(!t)return;
+          var el=n-c.entryTime;var pr=pct(el,t.targetTimeHours*3600000);
+          var restMs=t.targetTimeHours*3600000-el;
+          if(pr>=100){listos++;lines.push('🔴 #'+c.number+' ('+t.name+'): EXCEDIDO por '+elpS(Math.abs(restMs))+' — '+c.productName);}
+          else if(pr>=80){demorados++;lines.push('🟡 #'+c.number+' ('+t.name+'): '+pr+'% · falta '+elpS(restMs)+' — '+c.productName);}
+          else{encamino++;lines.push('✅ #'+c.number+' ('+t.name+'): '+pr+'% · falta '+elpS(restMs)+' — '+c.productName);}
+        });
+        lines.push('');
+        lines.push('📊 Resumen: '+listos+' excedidos · '+demorados+' próximos a vencer · '+encamino+' en tiempo normal');
+        if(listos)lines.push('💡 Recomendación: revisar los coches excedidos para posible liberación anticipada.');
+      }
+    }
+
+    // ── LIBRAS / PRODUCCIÓN ──
+    if(isLbs){
+      lines.push('⚖ ANÁLISIS DE PRODUCCIÓN\n');
+      lines.push('En proceso ahora: '+lbsActual.toLocaleString()+' lbs');
+      tunnels.forEach(function(t){
+        var inT2=coches.filter(function(c){return c.tunnelId===t.id&&c.status==='en-tunel'});
+        var lbs2=inT2.reduce(function(a,c){return a+(c.totalLbs||0)},0);
+        if(inT2.length)lines.push('  '+t.name+': '+lbs2.toLocaleString()+' lbs ('+inT2.length+' coches)');
+      });
+      lines.push('');
+      var histLbs=history.reduce(function(a,hh){return a+(hh.totalLbs||0)},0);
+      lines.push('Historial acumulado: '+histLbs.toLocaleString()+' lbs en '+history.length+' ciclos');
+      // Top productos
+      var byProd={};history.forEach(function(hh){if(!hh.productName)return;if(!byProd[hh.productName])byProd[hh.productName]={lbs:0,ciclos:0};byProd[hh.productName].lbs+=hh.totalLbs||0;byProd[hh.productName].ciclos++;});
+      var prods=Object.keys(byProd).sort(function(a,b){return byProd[b].lbs-byProd[a].lbs});
+      if(prods.length){
+        lines.push('\n📦 Top por producto:');
+        prods.slice(0,5).forEach(function(p){lines.push('  '+p+': '+byProd[p].lbs.toLocaleString()+' lbs · '+byProd[p].ciclos+' ciclos')});
+      }
+    }
+
+    // ── ALARMAS ──
+    if(isAlarma){
+      lines.push('🔔 ALARMAS Y ALERTAS\n');
+      if(!unack.length){lines.push('✅ No hay alarmas pendientes. Todo en orden.');}
+      else{
+        lines.push('⚠️ '+unack.length+' alarma(s) pendiente(s):\n');
+        var byType={};unack.forEach(function(a){if(!byType[a.type])byType[a.type]=[];byType[a.type].push(a);});
+        if(byType['product-ready']){lines.push('✅ LISTOS PARA LIBERAR ('+byType['product-ready'].length+'):');byType['product-ready'].forEach(function(a){lines.push('  '+a.msg)});}
+        if(byType['outside-alert']){lines.push('\n⏱ FUERA DEL LÍMITE ('+byType['outside-alert'].length+'):');byType['outside-alert'].forEach(function(a){lines.push('  '+a.msg)});}
+        if(byType['temp-check']){lines.push('\n🌡 REVISAR TEMPERATURA ('+byType['temp-check'].length+'):');byType['temp-check'].forEach(function(a){lines.push('  '+a.msg)});}
+        lines.push('\n💡 Acción: entra al Dashboard y presiona OK en cada alarma luego de atenderla.');
+      }
+    }
+
+    // ── HISTORIAL / RENDIMIENTO ──
+    if(isHist){
+      lines.push('📈 RENDIMIENTO HISTÓRICO\n');
+      if(!history.length){lines.push('Sin registros históricos aún.');} 
+      else{
+        var totalLbsH=history.reduce(function(a,hh){return a+(hh.totalLbs||0)},0);
+        var avgMin=history.length>0?(history.reduce(function(a,hh){return a+(hh.outsideMin||0)},0)/history.length).toFixed(0):0;
+        lines.push('Total ciclos completados: '+history.length);
+        lines.push('Total libras procesadas: '+totalLbsH.toLocaleString()+' lbs');
+        lines.push('Promedio tiempo afuera: '+avgMin+'min por coche\n');
+        tunnels.forEach(function(t){
+          var items=history.filter(function(hh){return hh.tunnelId===t.id});
+          if(!items.length)return;
+          var avgH=(items.reduce(function(a,hh){return a+(parseFloat(hh.horasEnTunel)||0)},0)/items.length).toFixed(1);
+          var lbsT2=items.reduce(function(a,hh){return a+(hh.totalLbs||0)},0);
+          var retrasos=items.filter(function(hh){return parseFloat(hh.horasEnTunel)>t.targetTimeHours*1.1}).length;
+          var anticip=items.filter(function(hh){return hh.earlyRelease}).length;
+          var puntual=Math.round((items.length-retrasos)/items.length*100);
+          var icon=puntual>=90?'✅':puntual>=70?'🟡':'🔴';
+          lines.push(icon+' '+t.name+':');
+          lines.push('  '+items.length+' ciclos · '+lbsT2.toLocaleString()+' lbs · Prom: '+avgH+'h vs obj '+t.targetTimeHours+'h');
+          lines.push('  Puntualidad: '+puntual+'% · Retrasos: '+retrasos+' · Anticipados: '+anticip);
+        });
+        // Por turno
+        var byTurno={};history.forEach(function(hh){var sh=hh.shift||'?';if(!byTurno[sh])byTurno[sh]={lbs:0,ciclos:0};byTurno[sh].lbs+=hh.totalLbs||0;byTurno[sh].ciclos++;});
+        lines.push('\n📊 Por turno:');
+        SHIFTS.forEach(function(s){var d=byTurno[s.id];if(d)lines.push('  '+s.l+': '+d.ciclos+' ciclos · '+d.lbs.toLocaleString()+' lbs')});
+      }
+    }
+
+    // ── COCHE MÁS TIEMPO AFUERA ──
+    if(isAfuera){
+      lines.push('⏳ COCHES CON MÁS TIEMPO AFUERA\n');
+      var libresT=libresConProd.map(function(c){return Object.assign({},c,{ms:c.productLoadTime?n-c.productLoadTime:0})});
+      libresT.sort(function(a,b){return b.ms-a.ms});
+      if(!libresT.length){lines.push('No hay coches libres con producto cargado.');}
+      else{
+        libresT.forEach(function(c){
+          var icon=c.ms>=MAX_OUT*60000?'🔴':c.ms>=MAX_OUT*60000*0.7?'🟡':'✅';
+          lines.push(icon+' Coche #'+c.number+' — '+c.productName);
+          lines.push('  '+elpS(c.ms)+' afuera · '+(c.totalLbs||0).toLocaleString()+' lbs · Límite: '+MAX_OUT+'min');
+        });
+        var criticos=libresT.filter(function(c){return c.ms>=MAX_OUT*60000});
+        if(criticos.length)lines.push('\n💡 '+criticos.length+' coche(s) superaron el límite de '+MAX_OUT+' min. Ingresar a túnel urgente.');
+      }
+    }
+
+    // ── CAPACIDAD ──
+    if(isCapac){
+      lines.push('📐 CAPACIDAD DE TÚNELES\n');
+      tunnels.forEach(function(t){
+        var occ=coches.filter(function(c){return c.tunnelId===t.id&&c.status==='en-tunel'}).length;
+        var libre2=t.capacityCoches-occ;
+        var icon=libre2===0?'🔴':libre2<=2?'🟡':'🟢';
+        lines.push(icon+' '+t.name+': '+occ+'/'+t.capacityCoches+' coches ('+libre2+' lugar'+(libre2!==1?'es':'')+' libre'+(libre2!==1?'s':'')+')');
+      });
+      lines.push('\nCoches listos para ingresar: '+libresConProd.length+' con producto cargado');
+    }
+
+    // ── RECOMENDACIONES ──
+    if(isRecomend){
+      lines.push('💡 RECOMENDACIONES OPERATIVAS\n');
+      var recomendaciones=[];
+      // Coches excedidos
+      var excedidos=enT.filter(function(c){var t=tunnels.find(function(x){return x.id===c.tunnelId});return t&&(n-c.entryTime)>=t.targetTimeHours*3600000});
+      if(excedidos.length)recomendaciones.push('🔴 '+excedidos.length+' coche(s) excedieron tiempo objetivo. Revisar temperatura de producto para liberación anticipada.');
+      // Coches afuera mucho tiempo
+      var afueraLargo=libresConProd.filter(function(c){return c.productLoadTime&&(n-c.productLoadTime)>=MAX_OUT*60000});
+      if(afueraLargo.length)recomendaciones.push('⚠️ '+afueraLargo.length+' coche(s) superaron '+MAX_OUT+'min afuera. Ingresar a túnel inmediatamente.');
+      // Túneles con espacio
+      tunnels.forEach(function(t){var occ=coches.filter(function(c){return c.tunnelId===t.id&&c.status==='en-tunel'}).length;if(occ<t.capacityCoches&&libresConProd.length>0)recomendaciones.push('✅ '+t.name+' tiene '+(t.capacityCoches-occ)+' lugar(es) libre(s). Hay '+libresConProd.length+' coche(s) listo(s) para ingresar.')});
+      // Temperaturas sin revisar
+      tunnels.forEach(function(t){var inT2=coches.filter(function(c){return c.tunnelId===t.id&&c.status==='en-tunel'});if(!inT2.length)return;var last=tLogs.filter(function(l){return l.tunnelId===t.id}).sort(function(a,b){return b.timestamp-a.timestamp})[0];var since=last?n-last.timestamp:n-(inT2[0].entryTime||n);if(since>=t.checkIntervalMin*60000)recomendaciones.push('🌡 '+t.name+' lleva '+elpS(since)+' sin registro de temperatura. Registrar urgente.')});
+      // Alarmas sin atender
+      if(unack.length>3)recomendaciones.push('🔔 Hay '+unack.length+' alarmas sin atender. Revisar el panel de alarmas.');
+      if(!recomendaciones.length)recomendaciones.push('✅ Todo parece estar en orden. Operación normal.');
+      recomendaciones.forEach(function(r){lines.push(r)});
+    }
+
+    lines.push('\n─────────────────────────────────────');
+    lines.push('⚡ Análisis local · Sin API · Datos en tiempo real');
+    return lines.join('\n');
+  }
+
   function sendAI(msg){
     if(!msg.trim()||aiLoad)return;
-    var msgs=aiMsgs.concat([{role:'user',content:msg}]);setAiMsgs(msgs);setAiLoad(true);
-    if(!config.scriptUrl){
-      setAiMsgs(function(p){return p.concat([{role:'assistant',content:'⚠️ Para usar la IA necesitas configurar la URL del Apps Script en Gestion → Config.\n\nUna vez configurado, podre analizar en tiempo real:\n• Estado de todos los tuneles y coches\n• Alertas de temperatura y alarmas\n• Historico de ciclos y rendimiento\n• Libras procesadas por turno y tunel'}])});
-      setAiLoad(false);return;
-    }
-    // Contexto rico para la IA
-    var enT=coches.filter(function(c){return c.status==='en-tunel'});
-    var unack=alarms.filter(function(a){return !a.ack});
-    var totalLbsHist=history.reduce(function(a,hh){return a+(hh.totalLbs||0)},0);
-    var lbsActual=enT.reduce(function(a,c){return a+(c.totalLbs||0)},0);
-    // Analisis de temp por tunel
-    var tempAnalisis=tunnels.map(function(t){
-      var lg=tLogs.filter(function(l){return l.tunnelId===t.id}).slice(0,5);
-      var last=lg[0];var alertas=lg.filter(function(l){return l.estado==='falla'||(l.airTemp!=null&&Math.abs(l.airTemp-t.targetTemp)>8&&l.estado!=='defrost')});
-      return t.name+'(ultAire:'+(last&&last.airTemp!=null?last.airTemp+'C':'sin datos')+',ultProd:'+(last&&last.prodTemp!=null?last.prodTemp+'C':'sin datos')+',alertas:'+alertas.length+',registros:'+lg.length+')';
-    }).join(' | ');
-    // Analisis de historial por tunel
-    var histAnalisis=tunnels.map(function(t){
-      var items=history.filter(function(hh){return hh.tunnelId===t.id});
-      if(!items.length)return '';
-      var avgH=(items.reduce(function(a,hh){return a+(parseFloat(hh.horasEnTunel)||0)},0)/items.length).toFixed(1);
-      var totalLbs=items.reduce(function(a,hh){return a+(hh.totalLbs||0)},0);
-      var retrasos=items.filter(function(hh){return parseFloat(hh.horasEnTunel)>t.targetTimeHours*1.1}).length;
-      var anticipados=items.filter(function(hh){return hh.earlyRelease}).length;
-      return t.name+'(ciclos:'+items.length+',avgH:'+avgH+'h,lbs:'+totalLbs.toLocaleString()+',retrasos:'+retrasos+',anticipados:'+anticipados+')';
-    }).filter(Boolean).join(' | ');
-    var ctx=[
-      'FECHA/HORA: '+new Date().toLocaleString('es-EC')+' | TURNO: '+SHIFTS.find(function(s){return s.id===curShift()}).l,
-      'TUNELES ESTADO:',
-      tunnels.map(function(t){var o=coches.filter(function(c){return c.tunnelId===t.id&&c.status==='en-tunel'});var lbs=o.reduce(function(a,c){return a+(c.totalLbs||0)},0);return'  '+t.name+': '+o.length+'/'+t.capacityCoches+' coches | '+lbs.toLocaleString()+' lbs | Obj:'+t.targetTemp+'C/'+t.targetTimeHours+'h'}).join('\n'),
-      'COCHES EN PROCESO:',
-      enT.length?enT.map(function(c){var t=tunnels.find(function(x){return x.id===c.tunnelId});var el=Date.now()-c.entryTime;var prc=pct(el,(t?t.targetTimeHours:1)*3600000);var outsMs=c.productLoadTime&&c.entryTime?c.entryTime-c.productLoadTime:0;return'  #'+c.number+': '+c.productName+' '+c.units+'u/('+c.totalLbs+'lbs) | '+elp(el)+' ('+prc+'%) | afuera:'+Math.round(outsMs/60000)+'min'}).join('\n'):'  Ninguno',
-      'MASTERIZANDO: '+coches.filter(function(c){return c.status==='masterizando'}).length+' coches',
-      'LIBRES: '+coches.filter(function(c){return c.status==='libre'}).length+' ('+coches.filter(function(c){return c.status==='libre'&&(c.units||0)>0}).length+' con producto)',
-      'ALARMAS PENDIENTES: '+unack.length+(unack.length?'\n  '+unack.slice(0,3).map(function(a){return a.msg}).join('\n  '):''),
-      'TEMPERATURAS POR TUNEL:\n  '+tempAnalisis,
-      'HISTORICO DE CICLOS:\n  Total lbs procesadas: '+totalLbsHist.toLocaleString()+'\n  Ciclos totales: '+history.length+'\n  '+histAnalisis,
-      'LBS ACTUALES EN TUNELES: '+lbsActual.toLocaleString()
-    ].join('\n');
-    fetch(config.scriptUrl,{method:'POST',
-      body:JSON.stringify({
-        action:'askAI',anthropicKey:cfR.current.anthropicKey||'',openaiKey:cfR.current.openaiKey||'',
-        messages:msgs.map(function(m){return {role:m.role,content:m.content}}),
-        system:'Eres el asistente inteligente de FREEZE CONTROL, sistema de control de tuneles de congelacion industrial de mariscos. Analizas datos en tiempo real y das recomendaciones operativas concretas.\n\nCapacidades:\n- Analizar temperaturas (aire y producto) y detectar anomalias\n- Comparar tiempos de congelacion vs estandar del tunel\n- Calcular rendimiento por tunel, turno y producto\n- Detectar patrones de retraso o liberacion anticipada\n- Alertar sobre coches con demasiado tiempo afuera\n- Analizar las libras procesadas por periodo\n\nDa indicadores claros con emojis: ✅ OK, ⚠️ Atencion, 🔴 Critico, 📊 Analisis, 💡 Recomendacion\nSe conciso pero completo. Responde en español.\n\nCONTEXTO EN TIEMPO REAL:\n'+ctx
-      }),
-      headers:{'Content-Type':'text/plain'}
-    })
-    .then(function(r){return r.json()}).then(function(d){
-      setAiMsgs(function(prev){return prev.concat([{role:'assistant',content:d.ok?d.response:(d.error||'Error al procesar la solicitud')}])})
-    })
-    .catch(function(){setAiMsgs(function(prev){return prev.concat([{role:'assistant',content:'Error de conexion con el servidor.'}])})})
-    .finally(function(){setAiLoad(false)});
+    setAiMsgs(function(prev){return prev.concat([{role:'user',content:msg}])});
+    setAiLoad(true);
+    // Simular pequeña demora para que se sienta más natural
+    setTimeout(function(){
+      try{
+        var resp=localAIAnalysis(msg);
+        setAiMsgs(function(prev){return prev.concat([{role:'assistant',content:resp}])});
+      }catch(e){
+        setAiMsgs(function(prev){return prev.concat([{role:'assistant',content:'❌ Error al analizar datos: '+e.message}])});
+      }
+      setAiLoad(false);
+    },400);
   }
 
   var unacked=alarms.filter(function(a){return !a.ack});
