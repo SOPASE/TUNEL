@@ -1,0 +1,1298 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"/>
+<meta name="theme-color" content="#0b1525"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Freeze Control"/>
+<link rel="manifest" id="pwa-manifest"/>
+<title>FREEZE CONTROL</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/htm/dist/htm.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Exo+2:wght@400;600;700&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body,#root{height:100%;font-family:'Exo 2',sans-serif;background:#06090f;color:#c8e0f4}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:#0b1525}::-webkit-scrollbar-thumb{background:#1a3557;border-radius:2px}
+input,select,textarea,button{font-family:'Exo 2',sans-serif}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#00c8ff!important}
+button:active{opacity:0.8}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.spin{animation:spin .8s linear infinite}
+.fade{animation:fadeIn .2s ease}
+#splash{position:fixed;inset:0;background:#06090f;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:9999;transition:opacity .4s}
+#splash.hide{opacity:0;pointer-events:none}
+</style>
+</head>
+<body>
+<div id="splash">
+  <div style="font-size:52px">🧊</div>
+  <div style="font-family:Orbitron,monospace;color:#00c8ff;font-size:20px;letter-spacing:3px">FREEZE CONTROL</div>
+  <div style="color:#3d6b8a;font-size:12px">Iniciando sistema...</div>
+</div>
+<div id="root"></div>
+<script>
+// PWA Manifest
+const mBlob=new Blob([JSON.stringify({name:'FREEZE CONTROL',short_name:'Freeze',start_url:'./',display:'standalone',background_color:'#06090f',theme_color:'#0b1525',icons:[{src:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%230b1525'/%3E%3Ctext y='156' x='16' font-size='148'%3E%F0%9F%A7%8A%3C/text%3E%3C/svg%3E",sizes:'192x192',type:'image/svg+xml'}]})],{type:'application/json'});
+document.getElementById('pwa-manifest').href=URL.createObjectURL(mBlob);
+// SW
+if('serviceWorker' in navigator){const swB=new Blob([`self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>clients.claim());self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request))));`],{type:'application/javascript'});navigator.serviceWorker.register(URL.createObjectURL(swB),{scope:'./'}).catch(()=>{});}
+// Install prompt
+let _dp=null;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();_dp=e;});
+window.installPWA=()=>{if(_dp){_dp.prompt();_dp.userChoice.then(()=>{_dp=null;});}};
+</script>
+<script>
+const html=htm.bind(React.createElement);
+const {useState,useEffect,useRef,useCallback,useMemo}=React;
+
+// ── CONSTANTES ──────────────────────────────────────────────────
+const C={bg:'#06090f',s1:'#0b1525',s2:'#0f1e38',s3:'#152545',b:'#1a3557',ac:'#00c8ff',g:'#00e888',w:'#ffaa00',d:'#ff3366',t:'#c8e0f4',m:'#3d6b8a',t2:'#7a9ab8'};
+const TT={amoniaco:{l:'Amoniaco',h:9,temp:-30,c:'#00e888'},freon:{l:'Freón',h:13,temp:-18,c:'#00c8ff'}};
+const SHIFTS=[{id:'manana',l:'Mañana',c:'#ffaa00'},{id:'tarde',l:'Tarde',c:'#00c8ff'},{id:'noche',l:'Noche',c:'#aa88ff'}];
+const MAX_OUT=60;
+const CACHE_KEY='fc_v4';const CFG_KEY='fc_cfg_v2';
+
+// ── HELPERS ──────────────────────────────────────────────────────
+const gid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+const elp=(ms)=>{if(!ms||ms<=0)return'00:00:00';const s=Math.floor(ms/1000);return[Math.floor(s/3600),Math.floor(s%3600/60),s%60].map(v=>String(v).padStart(2,'0')).join(':')};
+const elpS=(ms)=>{if(!ms||ms<=0)return'0min';const m=Math.floor(ms/60000);return m<60?`${m}min`:`${Math.floor(m/60)}h ${m%60}min`};
+const pct=(a,b)=>b===0?0:Math.min(100,Math.round(a/b*100));
+const tcol=(el,h)=>{const p=pct(el,(h||1)*3600e3);return p>=100?C.d:p>=80?C.w:p>=50?'#ffdd00':C.g};
+const ocol=(ms,max)=>{const m=ms/60000;return m>=max?C.d:m>=max*.7?C.w:m>=max*.4?'#ffdd00':C.g};
+const shift=()=>{const h=new Date().getHours();return h>=6&&h<14?'manana':h>=14&&h<22?'tarde':'noche'};
+const shiftOf=(ts)=>{const h=new Date(ts).getHours();return h>=6&&h<14?'manana':h>=14&&h<22?'tarde':'noche'};
+const calcLbs=(u,w,unit)=>Math.round(+u*(unit==='kg'?+w*2.20462:+w)*100)/100;
+const fmt=(d)=>d?new Date(d).toLocaleString('es-EC'):'—';
+const fmtT=(d)=>d?new Date(d).toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'}):'—';
+
+const saveCache=(d)=>{try{localStorage.setItem(CACHE_KEY,JSON.stringify({...d,at:Date.now()}));}catch{}};
+const loadCache=()=>{try{return JSON.parse(localStorage.getItem(CACHE_KEY)||'{}')}catch{return{}}};
+const saveCfg=(c)=>{try{localStorage.setItem(CFG_KEY,JSON.stringify(c));}catch{}};
+const loadCfg=()=>{try{return JSON.parse(localStorage.getItem(CFG_KEY)||'{}')}catch{return{}}};
+
+// ── DATOS DEFAULT ────────────────────────────────────────────────
+const N=Date.now();
+const DEF_USERS=[
+  {id:'u1',name:'Carlos Mendoza',email:'admin@planta.com',password:'admin123',role:'admin',cargo:'Jefe de Producción',phone:'5930991234567'},
+  {id:'u2',name:'María Torres',email:'maria@planta.com',password:'sup123',role:'supervisor',cargo:'Supervisora de Turno',phone:'5930997654321'},
+  {id:'u3',name:'Juan López',email:'juan@planta.com',password:'op123',role:'operador',cargo:'Operador de Túneles',phone:'5930985432100'},
+  {id:'u4',name:'Pedro Reyes',email:'pedro@planta.com',password:'op123',role:'operador',cargo:'Operador de Túneles',phone:'5930976543210'},
+  {id:'u5',name:'Ana Suárez',email:'ana@planta.com',password:'sup123',role:'supervisor',cargo:'Supervisora Nocturna',phone:'5930965432109'},
+];
+const DEF_TUNNELS=[
+  {id:'t1',name:'Túnel Amoniaco 1',type:'amoniaco',capacityCoches:8,targetTemp:-30,checkIntervalMin:120,targetTimeHours:9,color:'#00e888'},
+  {id:'t2',name:'Túnel Amoniaco 2',type:'amoniaco',capacityCoches:6,targetTemp:-30,checkIntervalMin:120,targetTimeHours:9,color:'#00e888'},
+  {id:'t3',name:'Túnel Freón 1',type:'freon',capacityCoches:10,targetTemp:-18,checkIntervalMin:120,targetTimeHours:13,color:'#00c8ff'},
+];
+const DEF_COCHES=[
+  {id:'c1',number:'001',productName:'Camarones',unitType:'caja',units:120,weightPerUnit:4,weightUnit:'lbs',totalLbs:480,status:'libre',tunnelId:null,productLoadTime:N-45*60000,entryTime:null,exitTime:null,ciclos:3,lastProduct:null},
+  {id:'c2',number:'002',productName:'Langostinos',unitType:'caja',units:85,weightPerUnit:5,weightUnit:'lbs',totalLbs:425,status:'en-tunel',tunnelId:'t1',productLoadTime:N-26*3600000,entryTime:N-25200000,exitTime:null,ciclos:7,lastProduct:null},
+  {id:'c3',number:'003',productName:'Camarones',unitType:'caja',units:200,weightPerUnit:4,weightUnit:'lbs',totalLbs:800,status:'en-tunel',tunnelId:'t1',productLoadTime:N-5*3600000,entryTime:N-3600000,exitTime:null,ciclos:5,lastProduct:null},
+  {id:'c4',number:'004',productName:'',unitType:'caja',units:0,weightPerUnit:4,weightUnit:'lbs',totalLbs:0,status:'libre',tunnelId:null,productLoadTime:null,entryTime:null,exitTime:null,ciclos:0,lastProduct:null},
+  {id:'c5',number:'005',productName:'Langostinos',unitType:'caja',units:175,weightPerUnit:5,weightUnit:'lbs',totalLbs:875,status:'en-tunel',tunnelId:'t2',productLoadTime:N-7*3600000,entryTime:N-5400000,exitTime:null,ciclos:12,lastProduct:null},
+  {id:'c6',number:'006',productName:'Camarones',unitType:'caja',units:90,weightPerUnit:4,weightUnit:'lbs',totalLbs:360,status:'masterizando',tunnelId:null,productLoadTime:N-15*3600000,entryTime:N-12*3600000,exitTime:N-1800000,masterTime:N-1800000,ciclos:9,lastProduct:null},
+  {id:'c7',number:'007',productName:'Calamar',unitType:'funda',units:145,weightPerUnit:2,weightUnit:'kg',totalLbs:640,status:'masterizando',tunnelId:null,productLoadTime:N-18*3600000,entryTime:N-16*3600000,exitTime:N-3600000,masterTime:N-3600000,ciclos:4,lastProduct:null},
+  {id:'c8',number:'008',productName:'Tilapia',unitType:'caja',units:60,weightPerUnit:8,weightUnit:'lbs',totalLbs:480,status:'en-tunel',tunnelId:'t3',productLoadTime:N-12*3600000,entryTime:N-10800000,exitTime:null,ciclos:6,lastProduct:null},
+];
+const PRODS=[
+  {name:'Camarones',unitType:'caja',weightPerUnit:4,weightUnit:'lbs'},
+  {name:'Langostinos',unitType:'caja',weightPerUnit:5,weightUnit:'lbs'},
+  {name:'Pescado',unitType:'caja',weightPerUnit:10,weightUnit:'kg'},
+  {name:'Tilapia',unitType:'caja',weightPerUnit:8,weightUnit:'lbs'},
+  {name:'Calamar',unitType:'funda',weightPerUnit:2,weightUnit:'kg'},
+  {name:'Pulpo',unitType:'funda',weightPerUnit:1.5,weightUnit:'kg'},
+];
+
+// ── MAPEO DESDE SHEETS ────────────────────────────────────────────
+function mapCoches(rows){
+  return rows.filter(r=>r[0]).map(r=>({
+    id:String(r[0]),number:String(r[1]),status:r[2]||'libre',
+    productName:r[3]||'',unitType:r[4]||'caja',
+    units:+r[5]||0,weightPerUnit:+r[6]||0,weightUnit:r[7]||'lbs',
+    totalLbs:+r[8]||0,lbs:+r[8]||0,cajetas:+r[5]||0,
+    tunnelId:r[9]||null,tunnelName:r[10]||'',ciclos:+r[11]||0,
+    productLoadTime:r[12]?new Date(String(r[12])).getTime()||null:null,
+    entryTime:r[13]?new Date(String(r[13])).getTime()||null:null,
+    exitTime:r[14]?new Date(String(r[14])).getTime()||null:null,
+    masterTime:null,lastProduct:null,
+  }));
+}
+function mapTuneles(rows){
+  return rows.filter(r=>r[0]).map(r=>({
+    id:String(r[0]),name:r[1]||'',type:r[2]||'amoniaco',
+    capacityCoches:+r[3]||8,capacityLbs:+r[4]||5000,
+    targetTemp:+r[5]||-30,checkIntervalMin:+r[6]||120,
+    targetTimeHours:+r[7]||9,color:r[8]||'#00e888',
+  }));
+}
+function mapHistorial(rows){
+  return rows.filter(r=>r[0]).map(r=>({
+    id:String(r[0]),number:r[1]||'',
+    productName:r[2]||'',unitType:r[3]||'caja',
+    units:+r[4]||0,weightPerUnit:+r[5]||0,weightUnit:r[6]||'lbs',totalLbs:+r[7]||0,
+    tunnelId:r[8]||'',tunnelName:r[9]||'',tunnelType:r[10]||'',
+    productLoadTime:r[11]?new Date(String(r[11])).getTime():null,
+    entryTime:r[12]?new Date(String(r[12])).getTime():null,
+    exitTime:r[13]?new Date(String(r[13])).getTime():null,
+    outsideMin:+r[14]||0,horasEnTunel:+r[15]||0,
+    shift:r[16]||'',userName:r[17]||'',
+  }));
+}
+
+// ── UI PRIMITIVOS ─────────────────────────────────────────────────
+function Btn({children,onClick,color,disabled=false,sm=false,full=false,style={}}) {
+  const c=color||C.ac;
+  return html`<button onClick=${onClick} disabled=${disabled}
+    style=${{...{background:`${c}18`,border:`1px solid ${c}50`,color:disabled?C.m:c,
+    padding:sm?'4px 10px':'7px 16px',borderRadius:6,cursor:disabled?'not-allowed':'pointer',
+    fontSize:sm?10:12,fontWeight:600,width:full?'100%':'auto',opacity:disabled?.5:1,
+    transition:'all .15s'},...style}}>${children}</button>`;
+}
+function Tag({children,color}){
+  return html`<span style=${{background:`${color||C.ac}18`,border:`1px solid ${color||C.ac}40`,
+    color:color||C.ac,padding:'1px 7px',borderRadius:10,fontSize:9,fontWeight:600,whiteSpace:'nowrap'}}>
+    ${children}</span>`;
+}
+function Card({children,style={}}){
+  return html`<div style=${{background:C.s1,border:`1px solid ${C.b}`,borderRadius:10,padding:14,...style}} class="fade">${children}</div>`;
+}
+function Modal({title,children,onClose,width=480}){
+  useEffect(()=>{document.body.style.overflow='hidden';return()=>{document.body.style.overflow=''}},[]);
+  return html`<div style=${{position:'fixed',inset:0,background:'#000c',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:12}}
+    onClick=${e=>e.target===e.currentTarget&&onClose()}>
+    <div style=${{background:C.s1,border:`1px solid ${C.b}`,borderRadius:12,padding:20,width:'100%',maxWidth:width,maxHeight:'92vh',overflowY:'auto'}} class="fade">
+      <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+        <div style=${{fontFamily:'Orbitron,monospace',fontSize:12,color:C.ac,fontWeight:700}}>${title}</div>
+        <button onClick=${onClose} style=${{background:'none',border:'none',color:C.m,cursor:'pointer',fontSize:18,padding:'0 4px'}}>✕</button>
+      </div>
+      ${children}
+    </div>
+  </div>`;
+}
+function Fld({label,value,onChange,type='text',placeholder='',options=null,rows=0}){
+  const s={width:'100%',background:C.s3,border:`1px solid ${C.b}`,borderRadius:6,padding:'8px 10px',color:C.t,fontSize:12,marginBottom:10};
+  return html`<div>
+    ${label&&html`<div style=${{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase',letterSpacing:.8}}>${label}</div>`}
+    ${options?html`<select value=${value} onChange=${e=>onChange(e.target.value)} style=${s}>
+      ${options.map(o=>html`<option key=${o.v} value=${o.v}>${o.l}</option>`)}
+    </select>`:rows>0?html`<textarea rows=${rows} value=${value} onChange=${e=>onChange(e.target.value)} placeholder=${placeholder} style=${{...s,resize:'vertical'}}/>`:html`<input type=${type} value=${value} onChange=${e=>onChange(e.target.value)} placeholder=${placeholder} style=${s}/>`}
+  </div>`;
+}
+function Spin(){return html`<span class="spin" style=${{display:'inline-block',fontSize:14}}>⟳</span>`;}
+
+// ── COCHE CARD ────────────────────────────────────────────────────
+function CocheCard({c,tunnels,inTunnel=false,dragging,setDragging,setDragOver,markReady,setFree,sendToMaster,now}){
+  const t=tunnels.find(x=>x.id===c.tunnelId);
+  const el=c.entryTime?now-c.entryTime:0;
+  const prog=t?pct(el,t.targetTimeHours*3600e3):0;
+  const tc=inTunnel?tcol(el,t?.targetTimeHours):C.t2;
+  const outsMs=c.productLoadTime&&c.status==='libre'?now-c.productLoadTime:
+               c.productLoadTime&&c.entryTime&&c.status!=='libre'?c.entryTime-c.productLoadTime:0;
+  const oc=outsMs>0?ocol(outsMs,MAX_OUT):C.m;
+  const over=outsMs>=MAX_OUT*60000&&c.status==='libre';
+  const units=c.units||c.cajetas||0;
+  const lbs=c.totalLbs||c.lbs||0;
+  const uLabel=c.unitType==='funda'?'fundas':'cajas';
+  const uPct=Math.min(100,pct(units,250));
+
+  return html`<div draggable=${true}
+    onDragStart=${()=>setDragging(c)}
+    onDragEnd=${()=>{setDragging(null);setDragOver(null);}}
+    style=${{background:C.s3,border:`1px solid ${over?C.d:prog>=100?C.d:inTunnel?tc+'50':C.b}`,
+      borderRadius:8,padding:9,cursor:'grab',userSelect:'none',
+      opacity:dragging?.id===c.id?.4:1,
+      boxShadow:over?`0 0 8px ${C.d}50`:'none',transition:'border-color .2s'}}>
+    <div style=${{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:3}}>
+      <span style=${{fontFamily:'Orbitron,monospace',fontWeight:700,fontSize:12,color:C.t}}>#${c.number}</span>
+      ${inTunnel?html`<${Tag} color=${tc}>${prog>=100?'✅ LISTO':'En Túnel'}</${Tag}>`:
+        over?html`<${Tag} color=${C.d}>⚠ URGENTE</${Tag}>`:
+        html`<${Tag} color=${C.t2}>Libre</${Tag}>`}
+    </div>
+    ${c.productName&&html`<div style=${{fontSize:10,color:C.t2,marginBottom:4}}>${c.productName}</div>`}
+    ${units>0&&html`<div>
+      <div style=${{display:'flex',justifyContent:'space-between',fontSize:10,marginBottom:2}}>
+        <span style=${{color:C.ac,fontWeight:600}}>📦 ${units} ${uLabel}</span>
+        <span style=${{color:C.g,fontWeight:700,fontFamily:'Orbitron,monospace'}}>${lbs.toLocaleString()} lbs</span>
+      </div>
+      <div style=${{background:C.s2,borderRadius:2,height:4,marginBottom:2}}>
+        <div style=${{background:uPct>80?C.w:C.ac,borderRadius:2,height:'100%',width:`${uPct}%`}}/>
+      </div>
+      <div style=${{fontSize:9,color:C.m,marginBottom:4}}>${c.weightPerUnit}${c.weightUnit}/${c.unitType==='funda'?'funda':'caja'}</div>
+    </div>`}
+    ${outsMs>0&&html`<div style=${{background:`${oc}15`,border:`1px solid ${oc}30`,borderRadius:5,padding:'4px 7px',marginBottom:4}}>
+      <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+        <span style=${{fontSize:9,color:oc,fontWeight:600}}>${c.status==='libre'?'⏱ AFUERA':'⏱ Afuera antes'}</span>
+        <span style=${{fontSize:10,color:oc,fontFamily:'Orbitron,monospace',fontWeight:700}}>${elpS(c.status==='libre'?now-c.productLoadTime:outsMs)}</span>
+      </div>
+      ${c.status==='libre'&&html`<div style=${{background:C.s2,borderRadius:2,height:3,marginTop:2}}>
+        <div style=${{background:oc,borderRadius:2,height:'100%',width:`${Math.min(100,pct(outsMs,MAX_OUT*60000))}%`}}/>
+      </div>`}
+    </div>`}
+    ${inTunnel&&html`<div>
+      <div style=${{display:'flex',justifyContent:'space-between',marginBottom:2}}>
+        <span style=${{fontSize:9,color:C.m}}>🧊 EN TÚNEL</span>
+        <span style=${{fontSize:10,color:tc,fontFamily:'Orbitron,monospace',fontWeight:700}}>${elp(el)}</span>
+      </div>
+      <div style=${{background:C.s2,borderRadius:2,height:3,marginBottom:6}}>
+        <div style=${{background:tc,borderRadius:2,height:'100%',width:`${Math.min(100,prog)}%`,transition:'width 1s'}}/>
+      </div>
+      <div style=${{display:'flex',gap:4}}>
+        <${Btn} sm=${true} color=${C.g} onClick=${e=>{e.stopPropagation();markReady(c.id);}}>✓ Listo</${Btn}>
+        <${Btn} sm=${true} color=${C.m} onClick=${e=>{e.stopPropagation();setFree(c.id);}}>↩</${Btn}>
+      </div>
+    </div>`}
+    ${c.status==='listo'&&html`<div style=${{display:'flex',gap:4,marginTop:4}}>
+      <${Btn} sm=${true} color=${'#aa88ff'} onClick=${e=>{e.stopPropagation();sendToMaster(c.id);}}>🔄 Masterizar</${Btn}>
+      <${Btn} sm=${true} color=${C.m} onClick=${e=>{e.stopPropagation();setFree(c.id);}}>↩</${Btn}>
+    </div>`}
+  </div>`;
+}
+
+// ── MODALES ──────────────────────────────────────────────────────
+function CargaRapidaModal({coche,onSave,onClose}){
+  const def=PRODS.find(p=>p.name===coche.productName)||PRODS[0];
+  const lp=coche.lastProduct;
+  const [f,setF]=useState({
+    productName:lp?.productName||coche.productName||def.name,
+    unitType:lp?.unitType||coche.unitType||def.unitType,
+    units:0,
+    weightPerUnit:lp?.weightPerUnit||coche.weightPerUnit||def.weightPerUnit,
+    weightUnit:lp?.weightUnit||coche.weightUnit||def.weightUnit,
+  });
+  const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  const lbs=calcLbs(f.units,f.weightPerUnit,f.weightUnit);
+  const pickP=(name)=>{const p=PRODS.find(x=>x.name===name);if(p)setF(prev=>({...prev,productName:p.name,unitType:p.unitType,weightPerUnit:p.weightPerUnit,weightUnit:p.weightUnit}));else s('productName',name);};
+  const save=()=>{if(!+f.units)return;onSave({...coche,...f,units:+f.units,weightPerUnit:+f.weightPerUnit,totalLbs:lbs,lbs,cajetas:+f.units,productLoadTime:Date.now(),status:'libre'});onClose();};
+
+  return html`<${Modal} title="⚡ Carga Rápida — Coche #${coche.number}" onClose=${onClose}>
+    <div style=${{marginBottom:12}}>
+      <div style=${{fontSize:9,color:C.m,marginBottom:6,textTransform:'uppercase',letterSpacing:.8}}>Producto</div>
+      <div style=${{display:'flex',flexWrap:'wrap',gap:5}}>
+        ${PRODS.map(p=>html`<button key=${p.name} onClick=${()=>pickP(p.name)}
+          style=${{padding:'5px 11px',borderRadius:14,border:`1px solid ${f.productName===p.name?C.ac:C.b}`,
+          background:f.productName===p.name?`${C.ac}20`:C.s3,color:f.productName===p.name?C.ac:C.t2,cursor:'pointer',fontSize:11}}>${p.name}</button>`)}
+      </div>
+    </div>
+    <div style=${{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
+      ${['caja','funda'].map(tipo=>html`<button key=${tipo} onClick=${()=>s('unitType',tipo)}
+        style=${{padding:10,borderRadius:8,border:`2px solid ${f.unitType===tipo?C.ac:C.b}`,
+        background:f.unitType===tipo?`${C.ac}18`:C.s3,cursor:'pointer',textAlign:'center'}}>
+        <div style=${{fontSize:20}}>${tipo==='caja'?'📦':'🛍'}</div>
+        <div style=${{fontSize:12,fontWeight:600,color:f.unitType===tipo?C.ac:C.t2,marginTop:3}}>${tipo==='caja'?'Cajas':'Fundas'}</div>
+      </button>`)}
+    </div>
+    <div style=${{display:'grid',gridTemplateColumns:'1fr 1fr 80px',gap:8,marginBottom:12}}>
+      <div>
+        <div style=${{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase',letterSpacing:.8}}>Cantidad</div>
+        <input type="number" value=${f.units} onInput=${e=>s('units',e.target.value)} placeholder="0" min="0"
+          style=${{width:'100%',background:C.s3,border:`1px solid ${C.b}`,borderRadius:6,padding:'8px 10px',color:C.t,fontSize:14,fontFamily:'Orbitron,monospace'}}/>
+      </div>
+      <div>
+        <div style=${{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase',letterSpacing:.8}}>Peso/${f.unitType==='funda'?'funda':'caja'}</div>
+        <input type="number" step="0.1" value=${f.weightPerUnit} onInput=${e=>s('weightPerUnit',e.target.value)}
+          style=${{width:'100%',background:C.s3,border:`1px solid ${C.b}`,borderRadius:6,padding:'8px 10px',color:C.t,fontSize:14,fontFamily:'Orbitron,monospace'}}/>
+      </div>
+      <div>
+        <div style=${{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase',letterSpacing:.8}}>Unidad</div>
+        <div style=${{display:'flex',flexDirection:'column',gap:4}}>
+          ${['lbs','kg'].map(u=>html`<button key=${u} onClick=${()=>s('weightUnit',u)}
+            style=${{padding:'6px',borderRadius:5,border:`1px solid ${f.weightUnit===u?C.w:C.b}`,
+            background:f.weightUnit===u?`${C.w}20`:C.s3,color:f.weightUnit===u?C.w:C.t2,cursor:'pointer',fontSize:11,fontWeight:600}}>${u}</button>`)}
+        </div>
+      </div>
+    </div>
+    <div style=${{background:`${C.g}12`,border:`1px solid ${C.g}30`,borderRadius:8,padding:12,marginBottom:14}}>
+      <div style=${{display:'flex',justifyContent:'space-around',textAlign:'center'}}>
+        <div><div style=${{fontSize:9,color:C.m}}>CANTIDAD</div><div style=${{fontFamily:'Orbitron,monospace',fontSize:22,color:C.ac,fontWeight:700}}>${f.units||0}</div></div>
+        <div style=${{color:C.m,fontSize:20,alignSelf:'center'}}>×</div>
+        <div><div style=${{fontSize:9,color:C.m}}>PESO/UND</div><div style=${{fontFamily:'Orbitron,monospace',fontSize:22,color:C.w,fontWeight:700}}>${f.weightPerUnit||0}${f.weightUnit}</div></div>
+        <div style=${{color:C.m,fontSize:20,alignSelf:'center'}}>=</div>
+        <div><div style=${{fontSize:9,color:C.m}}>TOTAL LBS</div><div style=${{fontFamily:'Orbitron,monospace',fontSize:22,color:C.g,fontWeight:700}}>${lbs.toLocaleString()}</div></div>
+      </div>
+      ${f.weightUnit==='kg'&&+f.units>0&&html`<div style=${{fontSize:9,color:C.m,marginTop:5,textAlign:'center'}}>${f.units}×${f.weightPerUnit}kg×2.205 = ${lbs} lbs</div>`}
+    </div>
+    <div style=${{display:'flex',gap:8,justifyContent:'flex-end'}}>
+      <${Btn} onClick=${onClose} color=${C.m}>Cancelar</${Btn}>
+      <${Btn} onClick=${save} disabled=${!+f.units||!f.productName} color=${C.g}>✅ Cargar Coche #${coche.number}</${Btn}>
+    </div>
+  </${Modal}>`;
+}
+
+function CocheFormModal({initial,onSave,onClose}){
+  const def=PRODS[0];
+  const [f,setF]=useState(initial||{number:'',productName:def.name,unitType:def.unitType,units:0,weightPerUnit:def.weightPerUnit,weightUnit:def.weightUnit,totalLbs:0});
+  const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  const lbs=calcLbs(f.units,f.weightPerUnit,f.weightUnit);
+  const pickP=(n)=>{const p=PRODS.find(x=>x.name===n);if(p)setF(prev=>({...prev,productName:p.name,unitType:p.unitType,weightPerUnit:p.weightPerUnit,weightUnit:p.weightUnit}));};
+  const save=()=>{
+    if(!f.number.trim())return;
+    const hp=+f.units>0;
+    onSave({...f,id:f.id||gid(),units:+f.units,weightPerUnit:+f.weightPerUnit,totalLbs:lbs,lbs,cajetas:+f.units,
+      status:f.status||'libre',tunnelId:f.tunnelId||null,entryTime:f.entryTime||null,exitTime:f.exitTime||null,
+      productLoadTime:hp?(f.productLoadTime||Date.now()):null,lastProduct:f.lastProduct||null,ciclos:f.ciclos||0});
+    onClose();
+  };
+  return html`<${Modal} title=${f.id?`Editar Coche #${f.number}`:'Nuevo Coche'} onClose=${onClose}>
+    <${Fld} label="Número de coche" value=${f.number} onChange=${v=>s('number',v)} placeholder="Ej: 009"/>
+    <div style=${{marginBottom:10}}>
+      <div style=${{fontSize:9,color:C.m,marginBottom:5,textTransform:'uppercase',letterSpacing:.8}}>Producto</div>
+      <div style=${{display:'flex',flexWrap:'wrap',gap:4,marginBottom:6}}>
+        ${PRODS.map(p=>html`<button key=${p.name} onClick=${()=>pickP(p.name)}
+          style=${{padding:'4px 10px',borderRadius:12,border:`1px solid ${f.productName===p.name?C.ac:C.b}`,
+          background:f.productName===p.name?`${C.ac}18`:C.s3,color:f.productName===p.name?C.ac:C.t2,cursor:'pointer',fontSize:10}}>${p.name}</button>`)}
+      </div>
+    </div>
+    <div style=${{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:10}}>
+      ${['caja','funda'].map(tipo=>html`<button key=${tipo} onClick=${()=>s('unitType',tipo)}
+        style=${{padding:8,borderRadius:8,border:`2px solid ${f.unitType===tipo?C.ac:C.b}`,
+        background:f.unitType===tipo?`${C.ac}18`:C.s3,cursor:'pointer',display:'flex',alignItems:'center',gap:8}}>
+        <span style=${{fontSize:16}}>${tipo==='caja'?'📦':'🛍'}</span>
+        <span style=${{fontWeight:600,fontSize:12,color:f.unitType===tipo?C.ac:C.t}}>${tipo==='caja'?'Cajas':'Fundas'}</span>
+      </button>`)}
+    </div>
+    <div style=${{display:'grid',gridTemplateColumns:'1fr 1fr 80px',gap:8,marginBottom:12}}>
+      <${Fld} label="Cantidad" type="number" value=${f.units} onChange=${v=>s('units',v)}/>
+      <${Fld} label="Peso/unidad" type="number" value=${f.weightPerUnit} onChange=${v=>s('weightPerUnit',v)}/>
+      <div>
+        <div style=${{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase',letterSpacing:.8}}>Unidad</div>
+        <div style=${{display:'flex',flexDirection:'column',gap:4}}>
+          ${['lbs','kg'].map(u=>html`<button key=${u} onClick=${()=>s('weightUnit',u)}
+            style=${{padding:'5px',borderRadius:5,border:`1px solid ${f.weightUnit===u?C.w:C.b}`,
+            background:f.weightUnit===u?`${C.w}20`:C.s3,color:f.weightUnit===u?C.w:C.t2,cursor:'pointer',fontSize:11,fontWeight:600}}>${u}</button>`)}
+        </div>
+      </div>
+    </div>
+    ${+f.units>0&&html`<div style=${{background:`${C.g}12`,border:`1px solid ${C.g}30`,borderRadius:8,padding:10,marginBottom:12,display:'flex',justifyContent:'space-around',textAlign:'center'}}>
+      <div><div style=${{fontSize:9,color:C.m}}>TOTAL LBS</div><div style=${{fontFamily:'Orbitron,monospace',fontSize:20,color:C.g,fontWeight:700}}>${lbs.toLocaleString()}</div></div>
+    </div>`}
+    <div style=${{display:'flex',gap:8,justifyContent:'flex-end'}}>
+      <${Btn} onClick=${onClose} color=${C.m}>Cancelar</${Btn}>
+      <${Btn} onClick=${save} color=${C.g}>Guardar</${Btn}>
+    </div>
+  </${Modal}>`;
+}
+
+function BatchModal({tunnel,cochesLibres,onConfirm,onClose}){
+  const [sel,setSel]=useState([]);
+  const occ=tunnel._occ||0;const avail=tunnel.capacityCoches-occ;
+  const toggle=(id)=>setSel(p=>p.includes(id)?p.filter(x=>x!==id):p.length<avail?[...p,id]:p);
+  const ok=()=>{if(!sel.length)return;onConfirm(tunnel.id,sel,Date.now());onClose();};
+  return html`<${Modal} title="🚛 Carga en Batch — ${tunnel.name}" onClose=${onClose} width=${500}>
+    <div style=${{display:'flex',gap:16,background:C.s3,borderRadius:8,padding:10,marginBottom:14,fontSize:11}}>
+      <div><div style=${{fontSize:9,color:C.m}}>CAPACIDAD</div><span style=${{color:C.t,fontWeight:600}}>${occ}/${tunnel.capacityCoches}</span></div>
+      <div><div style=${{fontSize:9,color:C.m}}>DISPONIBLE</div><span style=${{color:avail>0?C.g:C.d,fontWeight:600}}>${avail}</span></div>
+      <div><div style=${{fontSize:9,color:C.m}}>SELECCIONADOS</div><span style=${{color:C.w,fontWeight:600}}>${sel.length}</span></div>
+    </div>
+    <div style=${{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:6,maxHeight:280,overflowY:'auto',marginBottom:12}}>
+      ${cochesLibres.map(c=>{const s2=sel.includes(c.id);const dis=!s2&&sel.length>=avail;
+        return html`<button key=${c.id} onClick=${()=>!dis&&toggle(c.id)}
+          style=${{background:s2?`${C.g}18`:C.s3,border:`2px solid ${s2?C.g:C.b}`,borderRadius:8,padding:10,cursor:dis?'not-allowed':'pointer',opacity:dis?.4:1,textAlign:'left'}}>
+          <div style=${{fontFamily:'Orbitron,monospace',fontWeight:700,fontSize:12,color:s2?C.g:C.t}}>#${c.number}</div>
+          <div style=${{fontSize:10,color:C.t2}}>${c.productName}</div>
+          <div style=${{fontSize:10,color:C.ac}}>📦 ${c.units||c.cajetas||0}</div>
+          <div style=${{fontSize:10,color:C.g}}>⚖ ${(c.totalLbs||c.lbs||0).toLocaleString()} lbs</div>
+          ${c.productLoadTime&&html`<div style=${{fontSize:9,color:C.w,marginTop:2}}>⏱ ${elpS(Date.now()-c.productLoadTime)}</div>`}
+        </button>`;
+      })}
+    </div>
+    ${sel.length>0&&html`<div style=${{background:`${C.g}12`,borderRadius:6,padding:8,marginBottom:12,fontSize:11,color:C.g}}>
+      ✅ ${sel.length} coches entran a las ${new Date().toLocaleTimeString('es-EC')}
+    </div>`}
+    <div style=${{display:'flex',gap:8,justifyContent:'flex-end'}}>
+      <${Btn} onClick=${onClose} color=${C.m}>Cancelar</${Btn}>
+      <${Btn} onClick=${ok} disabled=${!sel.length} color=${C.g}>🚛 Cargar ${sel.length} al Túnel</${Btn}>
+    </div>
+  </${Modal}>`;
+}
+
+function VerifModal({tunnel,inTunel,userName,onSave,onRelease,onClose}){
+  const [f,setF]=useState({airTemp:'',prodTemp:'',estado:'normal',notes:''});
+  const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  const [confirm,setConfirm]=useState(false);
+  const aD=f.airTemp?Math.abs(+f.airTemp-tunnel.targetTemp):null;
+  const pD=f.prodTemp?Math.abs(+f.prodTemp-tunnel.targetTemp):null;
+  const aC=aD===null?C.t2:aD<=2?C.g:aD<=5?C.w:C.d;
+  const pC=pD===null?C.t2:+f.prodTemp<=tunnel.targetTemp+1?C.g:pD<=3?C.w:C.t2;
+  const prodReady=f.prodTemp&&+f.prodTemp<=tunnel.targetTemp+1;
+  const ESTADOS=[{v:'normal',l:'✅ Normal',c:C.g},{v:'defrost',l:'🔄 Defrost',c:C.w},{v:'falla',l:'🔴 Falla',c:C.d},{v:'recuperacion',l:'📉 Recuperación',c:'#aa88ff'},{v:'listo',l:'🏁 Listo',c:'#00e888'}];
+  const save=()=>{
+    if(!f.airTemp&&!f.prodTemp)return;
+    onSave({id:gid(),tunnelId:tunnel.id,tunnelName:tunnel.name,tunnelType:tunnel.type,
+      airTemp:f.airTemp?+f.airTemp:null,prodTemp:f.prodTemp?+f.prodTemp:null,
+      temp:f.airTemp?+f.airTemp:(f.prodTemp?+f.prodTemp:0),
+      targetTemp:tunnel.targetTemp,estado:f.estado,notes:f.notes,userName,timestamp:Date.now()});
+    onClose();
+  };
+  const doRelease=()=>{save();onRelease(tunnel.id,true);onClose();};
+  return html`<${Modal} title="🔍 Verificación — ${tunnel.name}" onClose=${onClose} width=${520}>
+    <div style=${{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:14}}>
+      ${[['Tipo',TT[tunnel.type]?.l,TT[tunnel.type]?.c],['Objetivo',`${tunnel.targetTemp}°C`,C.ac],['Tiempo',`${tunnel.targetTimeHours}h`,C.t2],['Coches',inTunel.length,C.w]].map(([k,v,c])=>
+        html`<div key=${k} style=${{background:C.s3,borderRadius:6,padding:'8px 10px',textAlign:'center'}}>
+          <div style=${{fontSize:9,color:C.m,marginBottom:2}}>${k}</div>
+          <div style=${{color:c||C.t,fontWeight:700,fontSize:13}}>${v}</div>
+        </div>`)}
+    </div>
+    ${inTunel.length>0&&html`<div style=${{background:C.s3,borderRadius:8,padding:10,marginBottom:12}}>
+      <div style=${{fontSize:9,color:C.m,marginBottom:6,textTransform:'uppercase',letterSpacing:.8}}>Coches en túnel</div>
+      <div style=${{display:'flex',flexWrap:'wrap',gap:5}}>
+        ${inTunel.map(c=>{const el=Date.now()-c.entryTime;const tc2=tcol(el,tunnel.targetTimeHours);
+          return html`<div key=${c.id} style=${{background:C.s2,borderRadius:6,padding:'5px 8px',border:`1px solid ${tc2}40`}}>
+            <div style=${{fontFamily:'Orbitron,monospace',fontWeight:700,fontSize:11,color:C.t}}>#${c.number}</div>
+            <div style=${{fontSize:9,color:C.t2}}>${c.productName}</div>
+            <div style=${{fontSize:10,color:tc2,fontFamily:'Orbitron,monospace'}}>${elp(el)}</div>
+          </div>`;
+        })}
+      </div>
+    </div>`}
+    <div style=${{marginBottom:12}}>
+      <div style=${{fontSize:9,color:C.m,marginBottom:6,textTransform:'uppercase',letterSpacing:.8}}>Estado al verificar</div>
+      <div style=${{display:'flex',flexWrap:'wrap',gap:5}}>
+        ${ESTADOS.map(e=>html`<button key=${e.v} onClick=${()=>s('estado',e.v)}
+          style=${{padding:'6px 12px',borderRadius:6,border:`1px solid ${f.estado===e.v?e.c:C.b}`,
+          background:f.estado===e.v?`${e.c}18`:C.s3,color:f.estado===e.v?e.c:C.t2,cursor:'pointer',fontSize:11}}>${e.l}</button>`)}
+      </div>
+    </div>
+    <div style=${{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+      <div>
+        <div style=${{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase',letterSpacing:.8}}>🌡 Temp AIRE (°C)</div>
+        <input type="number" value=${f.airTemp} onInput=${e=>s('airTemp',e.target.value)} placeholder=${String(tunnel.targetTemp)}
+          style=${{width:'100%',background:C.s3,border:`1px solid ${f.airTemp?aC:C.b}`,borderRadius:6,padding:'8px 10px',color:C.t,fontSize:14,fontFamily:'Orbitron,monospace'}}/>
+        ${f.airTemp&&html`<div style=${{fontSize:10,color:aC,marginTop:3}}>
+          ${aD<=2?'✅ Correcto':aD<=5?`⚠ Δ${aD}°C`:f.estado==='defrost'?`🔄 Defrost Δ${aD}°C`:`🔴 CRÍTICO Δ${aD}°C`}
+        </div>`}
+      </div>
+      <div>
+        <div style=${{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase',letterSpacing:.8}}>🧊 Temp PRODUCTO (°C)</div>
+        <input type="number" value=${f.prodTemp} onInput=${e=>s('prodTemp',e.target.value)} placeholder=${String(tunnel.targetTemp)}
+          style=${{width:'100%',background:C.s3,border:`1px solid ${f.prodTemp?pC:C.b}`,borderRadius:6,padding:'8px 10px',color:C.t,fontSize:14,fontFamily:'Orbitron,monospace'}}/>
+        ${f.prodTemp&&html`<div style=${{fontSize:10,color:pC,marginTop:3}}>
+          ${prodReady?'✅ ¡Producto listo!':pD<=3?`⚠ Casi listo Δ${pD}°C`:`❄ En proceso Δ${pD}°C`}
+        </div>`}
+      </div>
+    </div>
+    <${Fld} label="Observaciones" value=${f.notes} onChange=${v=>s('notes',v)} placeholder="Defrost iniciado, compresor ajustado..." rows=${2}/>
+    ${prodReady&&!confirm&&html`<div style=${{background:`${C.g}12`,border:`2px solid ${C.g}`,borderRadius:8,padding:12,marginBottom:12}}>
+      <div style=${{fontSize:12,color:C.g,fontWeight:600,marginBottom:6}}>✅ Producto a temperatura — Liberación anticipada disponible</div>
+      <${Btn} onClick=${()=>setConfirm(true)} color=${C.g}>🚀 Liberar túnel anticipadamente</${Btn}>
+    </div>`}
+    ${confirm&&html`<div style=${{background:`${C.d}12`,border:`2px solid ${C.d}`,borderRadius:8,padding:12,marginBottom:12}}>
+      <div style=${{fontSize:12,color:C.d,fontWeight:600,marginBottom:8}}>¿Confirmar liberación anticipada?</div>
+      <div style=${{display:'flex',gap:8}}>
+        <${Btn} onClick=${doRelease} color=${C.g}>✅ Sí, liberar</${Btn}>
+        <${Btn} onClick=${()=>setConfirm(false)} color=${C.m}>Cancelar</${Btn}>
+      </div>
+    </div>`}
+    <div style=${{display:'flex',gap:8,justifyContent:'flex-end',marginTop:8}}>
+      <${Btn} onClick=${onClose} color=${C.m}>Cancelar</${Btn}>
+      <${Btn} onClick=${save} disabled=${!f.airTemp&&!f.prodTemp} color=${C.ac}>💾 Guardar Verificación</${Btn}>
+    </div>
+  </${Modal}>`;
+}
+
+// ── APP PRINCIPAL ─────────────────────────────────────────────────
+function App(){
+  const cache=loadCache();
+  const cfg=loadCfg();
+  const [view,setView]=useState('login');
+  const [user,setUser]=useState(null);
+  const [users,setUsers]=useState(DEF_USERS);
+  const [tunnels,setTunnels]=useState(cache.tunnels||DEF_TUNNELS);
+  const [coches,setCoches]=useState(cache.coches||DEF_COCHES);
+  const [tempLogs,setTempLogs]=useState([]);
+  const [history,setHistory]=useState(cache.history||[]);
+  const [alarms,setAlarms]=useState([]);
+  const [config,setConfig]=useState({scriptUrl:'',ntfyTopic:'',...cfg});
+  const [lEmail,setLEmail]=useState('admin@planta.com');
+  const [lPass,setLPass]=useState('admin123');
+  const [lErr,setLErr]=useState('');
+  const [syncing,setSyncing]=useState(false);
+  const [syncMsg,setSyncMsg]=useState('');
+  const [online,setOnline]=useState(navigator.onLine);
+  const [now,setNow]=useState(Date.now());
+  const [dragging,setDragging]=useState(null);
+  const [dragOver,setDragOver]=useState(null);
+  const [showCarga,setShowCarga]=useState(null);
+  const [showCocheForm,setShowCocheForm]=useState(false);
+  const [editCoche,setEditCoche]=useState(null);
+  const [showBatch,setShowBatch]=useState(null);
+  const [showVerif,setShowVerif]=useState(null);
+  const [showTunnelForm,setShowTunnelForm]=useState(false);
+  const [editTunnel,setEditTunnel]=useState(null);
+  const [aiMsgs,setAiMsgs]=useState([{role:'assistant',content:'¡Hola! Soy tu asistente de túneles. Pregúntame sobre el estado actual, temperaturas, coches o alarmas.'}]);
+  const [aiInput,setAiInput]=useState('');
+  const [aiLoading,setAiLoading]=useState(false);
+  const [selTunnel,setSelTunnel]=useState(null);
+  const [showTempForm,setShowTempForm]=useState(false);
+  const aiEnd=useRef(null);
+  const syncTimer=useRef(null);
+  const cochesRef=useRef(coches);
+  const tunnelsRef=useRef(tunnels);
+  const alarmsRef=useRef(alarms);
+  const cfgRef=useRef(config);
+
+  useEffect(()=>{cochesRef.current=coches;},[coches]);
+  useEffect(()=>{tunnelsRef.current=tunnels;},[tunnels]);
+  useEffect(()=>{alarmsRef.current=alarms;},[alarms]);
+  useEffect(()=>{cfgRef.current=config;saveCfg(config);},[config]);
+  useEffect(()=>{aiEnd.current?.scrollIntoView({behavior:'smooth'});},[aiMsgs]);
+
+  // Timer — solo updates display cada 10s (no cada 1s)
+  useEffect(()=>{
+    const iv=setInterval(()=>setNow(Date.now()),10000);
+    return()=>clearInterval(iv);
+  },[]);
+
+  // Alarmas — cada 60s usando refs
+  useEffect(()=>{
+    const check=()=>{
+      const n=Date.now();const na=[];
+      cochesRef.current.forEach(c=>{
+        if(c.status==='libre'&&c.productLoadTime){
+          const ms=n-c.productLoadTime;
+          if(ms>=MAX_OUT*60000&&!alarmsRef.current.some(a=>a.cocheId===c.id&&a.type==='outside-alert'&&!a.ack))
+            na.push({id:gid(),type:'outside-alert',tunnelId:null,cocheId:c.id,msg:`🚨 Coche #${c.number} lleva ${elpS(ms)} AFUERA`,createdAt:n,ack:false});
+        }
+        if(c.status!=='en-tunel'||!c.entryTime)return;
+        const t=tunnelsRef.current.find(x=>x.id===c.tunnelId);if(!t)return;
+        const el=n-c.entryTime;
+        if(el>=t.targetTimeHours*3600e3&&!alarmsRef.current.some(a=>a.cocheId===c.id&&a.type==='product-ready'&&!a.ack))
+          na.push({id:gid(),type:'product-ready',tunnelId:t.id,cocheId:c.id,msg:`✅ LISTO Coche #${c.number} — ${t.name}`,createdAt:n,ack:false});
+      });
+      if(na.length){setAlarms(p=>[...p,...na]);na.forEach(a=>{fireNotif(a);});}
+    };
+    const iv=setInterval(check,60000);
+    return()=>clearInterval(iv);
+  },[]);
+
+  // Online/offline
+  useEffect(()=>{
+    const on=()=>setOnline(true);const off=()=>setOnline(false);
+    window.addEventListener('online',on);window.addEventListener('offline',off);
+    return()=>{window.removeEventListener('online',on);window.removeEventListener('offline',off);};
+  },[]);
+
+  // Auto-detect script URL
+  useEffect(()=>{
+    const url=window.location.href.split('?')[0];
+    if(url.includes('script.google.com')&&!config.scriptUrl)
+      setConfig(p=>({...p,scriptUrl:url}));
+  },[]);
+
+  // Polling multi-usuario cada 30s
+  useEffect(()=>{
+    if(!user)return;
+    const iv=setInterval(()=>{if(cfgRef.current.scriptUrl&&navigator.onLine)silentPoll(cfgRef.current.scriptUrl);},30000);
+    return()=>clearInterval(iv);
+  },[user]);
+
+  // ── HELPERS DE RED (compatibles con GitHub Pages + CORS) ──────
+  // Google Apps Script no permite POST cross-origin, usamos GET
+  // con los datos serializados en base64 en el parámetro ?d=
+  function b64(obj){
+    try{return btoa(unescape(encodeURIComponent(JSON.stringify(obj))));}catch{return '';}
+  }
+  function gasGet(url,action,data){
+    const payload={...data};delete payload.action;
+    const params='?action='+encodeURIComponent(action)+'&d='+encodeURIComponent(b64(payload))+'&_='+Date.now();
+    return fetch(url+params,{signal:AbortSignal.timeout(12000)}).then(r=>r.json()).catch(()=>({ok:false}));
+  }
+
+  async function silentPoll(url){
+    try{
+      const r=await fetch(url+'?t='+Date.now(),{signal:AbortSignal.timeout(8000)});
+      const d=await r.json();if(!d.ok)return;
+      let changed=false;
+      if(d.coches&&d.coches.length>0){const m=mapCoches(d.coches);setCoches(m);changed=true;}
+      if(d.tuneles&&d.tuneles.length>0){const m=mapTuneles(d.tuneles);setTunnels(m);}
+      if(d.historial&&d.historial.length>0){const m=mapHistorial(d.historial);setHistory(m);}
+      if(changed)saveCache({coches:cochesRef.current,tunnels:tunnelsRef.current,history:history});
+    }catch{}
+  }
+
+  function autoSync(nc,nt){
+    const c=nc||cochesRef.current;const t=nt||tunnelsRef.current;
+    saveCache({coches:c,tunnels:t,history:history});
+    if(!cfgRef.current.scriptUrl||!navigator.onLine)return;
+    if(syncTimer.current)clearTimeout(syncTimer.current);
+    syncTimer.current=setTimeout(()=>{
+      gasGet(cfgRef.current.scriptUrl,'syncAll',{tunnels:t,coches:c}).catch(()=>{});
+    },3000);
+  }
+
+  async function loadFromSheets(url){
+    if(!url)return;
+    setSyncing(true);setSyncMsg('⟳ Cargando...');
+    try{
+      const r=await fetch(url+'?t='+Date.now(),{signal:AbortSignal.timeout(12000)});
+      const d=await r.json();if(!d.ok)throw new Error(d.error);
+      if(d.coches&&d.coches.length>0)setCoches(mapCoches(d.coches));
+      if(d.tuneles&&d.tuneles.length>0)setTunnels(mapTuneles(d.tuneles));
+      if(d.historial&&d.historial.length>0)setHistory(mapHistorial(d.historial));
+      saveCache({coches:cochesRef.current,tunnels:tunnelsRef.current,history:history});
+      setSyncMsg('✅ '+new Date().toLocaleTimeString('es-EC'));
+    }catch(e){setSyncMsg('⚠ Sin red — cache local');}
+    setSyncing(false);
+  }
+
+  // Función reutilizable para enviar cualquier acción a Sheets
+  function enviarASheets(action,data){
+    if(!cfgRef.current.scriptUrl||!navigator.onLine)return;
+    gasGet(cfgRef.current.scriptUrl,action,data).catch(()=>{});
+  }
+
+  function fireNotif(a){
+    if(typeof Notification!=='undefined'&&Notification.permission==='granted')
+      new Notification('❄ FREEZE CONTROL',{body:a.msg,tag:a.id});
+    if(cfgRef.current.ntfyTopic)
+      fetch(`https://ntfy.sh/${cfgRef.current.ntfyTopic}`,{method:'POST',
+        headers:{'Title':'❄ FREEZE CONTROL','Priority':a.type==='temp-alert'?'urgent':'high','Tags':'rotating_light','Content-Type':'text/plain'},
+        body:a.msg+'\n'+new Date().toLocaleTimeString('es-EC')}).catch(()=>{});
+  }
+
+  function login(e){
+    e?.preventDefault();
+    const u=users.find(x=>x.email===lEmail&&x.password===lPass);
+    if(!u){setLErr('Credenciales incorrectas');return;}
+    setUser(u);setView('dashboard');setLErr('');
+    if(typeof Notification!=='undefined'&&Notification.permission==='default')Notification.requestPermission();
+    if(config.scriptUrl)loadFromSheets(config.scriptUrl);
+    document.getElementById('splash').classList.add('hide');
+  }
+
+  // ── OPERACIONES DE COCHES ──────────────────────────────────────
+  function markReady(id){
+    const c=coches.find(x=>x.id===id);const t=tunnels.find(x=>x.id===c?.tunnelId);
+    if(c&&t){
+      const outsideMs=c.productLoadTime&&c.entryTime?c.entryTime-c.productLoadTime:0;
+      const entry={id:gid(),number:c.number,productName:c.productName,unitType:c.unitType,
+        units:c.units||c.cajetas,weightPerUnit:c.weightPerUnit,weightUnit:c.weightUnit,totalLbs:c.totalLbs||c.lbs,
+        tunnelId:t.id,tunnelName:t.name,tunnelType:t.type,
+        productLoadTime:c.productLoadTime,entryTime:c.entryTime,exitTime:Date.now(),
+        outsideMin:Math.round(outsideMs/60000),horasEnTunel:((Date.now()-c.entryTime)/3600000).toFixed(2),
+        shift:shiftOf(Date.now()),userName:user?.name};
+      setHistory(p=>[entry,...p]);
+      if(config.scriptUrl)enviarASheets('logHistorial',entry);
+    }
+    const nc=coches.map(x=>x.id===id?{...x,status:'masterizando',tunnelId:null,exitTime:Date.now(),masterTime:Date.now()}:x);
+    setCoches(nc);autoSync(nc,null);
+  }
+  function setFree(id){const nc=coches.map(c=>c.id===id?{...c,status:'libre',tunnelId:null,entryTime:null}:c);setCoches(nc);autoSync(nc,null);}
+  function sendToMaster(id){const nc=coches.map(c=>c.id===id?{...c,status:'masterizando',masterTime:Date.now()}:c);setCoches(nc);autoSync(nc,null);}
+  function vaciarCoche(id){
+    const c=coches.find(x=>x.id===id);if(!c)return;
+    const ciclo={id:gid(),number:c.number,ciclo:(c.ciclos||0)+1,productName:c.productName,
+      unitType:c.unitType,units:c.units||c.cajetas,weightPerUnit:c.weightPerUnit,weightUnit:c.weightUnit,totalLbs:c.totalLbs||c.lbs,
+      productLoadTime:c.productLoadTime,entryTime:c.entryTime,exitTime:c.exitTime,masterTime:c.masterTime,
+      masterMin:c.masterTime?Math.round((Date.now()-c.masterTime)/60000):0,
+      shift:shiftOf(Date.now()),userName:user?.name,completedAt:Date.now()};
+    setHistory(p=>[ciclo,...p]);
+    if(config.scriptUrl)enviarASheets('logCiclo',ciclo);
+    const lp={productName:c.productName,unitType:c.unitType,weightPerUnit:c.weightPerUnit,weightUnit:c.weightUnit};
+    const nc=coches.map(x=>x.id===id?{...x,status:'libre',units:0,totalLbs:0,lbs:0,cajetas:0,productName:'',
+      productLoadTime:null,entryTime:null,exitTime:null,masterTime:null,tunnelId:null,ciclos:(x.ciclos||0)+1,lastProduct:lp}:x);
+    setCoches(nc);autoSync(nc,null);
+  }
+  function releaseTunnel(tid,early=false){
+    const t=tunnels.find(x=>x.id===tid);const n=Date.now();
+    const inT=coches.filter(c=>c.tunnelId===tid&&c.status==='en-tunel');
+    inT.forEach(c=>{
+      const entry={id:gid(),number:c.number,productName:c.productName,unitType:c.unitType,units:c.units||c.cajetas,
+        weightPerUnit:c.weightPerUnit,weightUnit:c.weightUnit,totalLbs:c.totalLbs||c.lbs,
+        tunnelId:t?.id,tunnelName:t?.name,tunnelType:t?.type,
+        productLoadTime:c.productLoadTime,entryTime:c.entryTime,exitTime:n,
+        outsideMin:c.productLoadTime&&c.entryTime?Math.round((c.entryTime-c.productLoadTime)/60000):0,
+        earlyRelease:early,shift:shiftOf(n),userName:user?.name};
+      setHistory(p=>[entry,...p]);
+      if(config.scriptUrl)enviarASheets('logHistorial',entry);
+    });
+    const nc=coches.map(c=>c.tunnelId===tid&&c.status==='en-tunel'?{...c,status:'masterizando',tunnelId:null,exitTime:n,masterTime:n}:c);
+    setCoches(nc);autoSync(nc,null);
+  }
+  function batchEntry(tid,ids,entryTime){
+    const nc=coches.map(c=>ids.includes(c.id)?{...c,status:'en-tunel',tunnelId:tid,entryTime}:c);
+    setCoches(nc);autoSync(nc,null);
+  }
+  function dropToTunnel(e,tid){
+    e.preventDefault();if(!dragging)return;
+    const t=tunnels.find(x=>x.id===tid);if(!t)return;
+    const occ=coches.filter(c=>c.tunnelId===tid&&c.status==='en-tunel').length;
+    if(occ>=t.capacityCoches){alert('Túnel lleno');setDragging(null);setDragOver(null);return;}
+    const nc=coches.map(c=>c.id===dragging.id?{...c,status:'en-tunel',tunnelId:tid,entryTime:Date.now()}:c);
+    setCoches(nc);autoSync(nc,null);setDragging(null);setDragOver(null);
+  }
+  function dropToFree(e){
+    e.preventDefault();if(!dragging)return;
+    const nc=coches.map(c=>c.id===dragging.id?{...c,status:'libre',tunnelId:null,entryTime:null}:c);
+    setCoches(nc);autoSync(nc,null);setDragging(null);setDragOver(null);
+  }
+
+  // ── EXCEL EXPORT ──────────────────────────────────────────────
+  function exportExcel(){
+    const wb=XLSX.utils.book_new();
+    // Hoja 1: Estado actual coches
+    const cochesData=[['#Coche','Estado','Producto','Tipo','Cantidad','Peso/Und','Unidad','Total Lbs','Túnel','Ciclos']];
+    coches.forEach(c=>cochesData.push([c.number,c.status,c.productName,c.unitType,c.units||c.cajetas||0,c.weightPerUnit||0,c.weightUnit||'lbs',c.totalLbs||c.lbs||0,c.tunnelId?tunnels.find(t=>t.id===c.tunnelId)?.name||'':'',c.ciclos||0]));
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(cochesData),'Coches');
+    // Hoja 2: Historial
+    const histData=[['#Coche','Producto','Tipo Und','Cantidad','Peso/Und','Unidad','Total Lbs','Túnel','Carga','Entrada Túnel','Salida Túnel','Min Afuera','Horas Túnel','Turno','Operador']];
+    history.forEach(h=>histData.push([h.number,h.productName||'',h.unitType||'caja',h.units||h.cajetas||0,h.weightPerUnit||0,h.weightUnit||'lbs',h.totalLbs||h.lbs||0,h.tunnelName||'',fmt(h.productLoadTime),fmt(h.entryTime),fmt(h.exitTime),h.outsideMin||0,h.horasEnTunel||0,SHIFTS.find(s=>s.id===h.shift)?.l||h.shift||'',h.userName||'']));
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(histData),'Historial');
+    // Hoja 3: Temperaturas
+    const tempData=[['Túnel','Temp Aire','Temp Producto','Objetivo','Δ Aire','Estado','Operador','Fecha/Hora']];
+    tempLogs.forEach(l=>tempData.push([l.tunnelName||'',l.airTemp??l.temp??'',l.prodTemp??'',l.targetTemp||0,l.airTemp!=null?Math.abs(l.airTemp-(l.targetTemp||0)):'',l.estado||'normal',l.userName||'',fmt(l.timestamp)]));
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(tempData),'Temperaturas');
+    XLSX.writeFile(wb,`FreezeControl_${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
+
+  // ── AI ─────────────────────────────────────────────────────────
+  async function sendAI(){
+    if(!aiInput.trim()||aiLoading)return;
+    const msg=aiInput.trim();setAiInput('');
+    const msgs=[...aiMsgs,{role:'user',content:msg}];setAiMsgs(msgs);setAiLoading(true);
+    const enT=coches.filter(c=>c.status==='en-tunel');
+    const master=coches.filter(c=>c.status==='masterizando');
+    const ctx=`TÚNELES:${tunnels.map(t=>{const o=coches.filter(c=>c.tunnelId===t.id&&c.status==='en-tunel');const lbs=o.reduce((a,c)=>a+(c.totalLbs||0),0);return`${t.name}(${o.length}/${t.capacityCoches},${t.targetTemp}°C,${t.targetTimeHours}h,${lbs.toLocaleString()}lbs)`;}).join('|')}
+EN TÚNEL:${enT.map(c=>{const t=tunnels.find(x=>x.id===c.tunnelId);const el=Date.now()-c.entryTime;const om=c.productLoadTime&&c.entryTime?Math.round((c.entryTime-c.productLoadTime)/60000):0;return`#${c.number}(${c.productName},${c.units||0}${c.unitType==='funda'?'f':'c'},${(c.totalLbs||0).toLocaleString()}lbs,${elp(el)},${pct(el,t?.targetTimeHours*3600e3)}%,afuera:${om}min)`;}).join(';')}
+MASTERIZANDO:${master.length} — ${master.map(c=>`#${c.number}(${elpS(c.masterTime?Date.now()-c.masterTime:0)})`).join(',')||'ninguno'}
+LIBRES VACÍOS:${coches.filter(c=>c.status==='libre'&&!(c.units||c.cajetas||0)).length}|LIBRES CON PROD:${coches.filter(c=>c.status==='libre'&&(c.units||c.cajetas||0)>0).length}
+ALARMAS PENDIENTES:${alarms.filter(a=>!a.ack).length}|TURNO:${SHIFTS.find(s=>s.id===shift())?.l}|HORA:${new Date().toLocaleTimeString('es-EC')}`;
+    try{
+      const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:600,
+          system:`Eres asistente experto en túneles de congelación industrial de mariscos. Conoces defrost, liberación anticipada, carga en batch, temperatura aire vs producto. Responde en español, conciso y con recomendaciones operativas. CONTEXTO: ${ctx}`,
+          messages:msgs.map(m=>({role:m.role,content:m.content}))})});
+      const d=await r.json();
+      setAiMsgs(p=>[...p,{role:'assistant',content:d.content?.[0]?.text||'Sin respuesta'}]);
+    }catch{setAiMsgs(p=>[...p,{role:'assistant',content:'Error de conexión.'}]);}
+    setAiLoading(false);
+  }
+
+  const unacked=alarms.filter(a=>!a.ack);
+  const lbsEnTunel=coches.filter(c=>c.status==='en-tunel').reduce((a,c)=>a+(c.totalLbs||c.lbs||0),0);
+
+  // ── RENDER ────────────────────────────────────────────────────
+  if(view==='login')return html`<div style=${{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+    <div style=${{background:C.s1,border:`1px solid ${C.b}`,borderRadius:14,padding:32,width:'100%',maxWidth:380}} class="fade">
+      <div style=${{textAlign:'center',marginBottom:24}}>
+        <div style=${{fontSize:44,marginBottom:8}}>🧊</div>
+        <div style=${{fontFamily:'Orbitron,monospace',fontSize:18,color:C.ac,fontWeight:700,letterSpacing:2}}>FREEZE CONTROL</div>
+        <div style=${{fontSize:11,color:C.m,marginTop:4}}>PROYECTO_TUNELES</div>
+      </div>
+      <form onSubmit=${login}>
+        <${Fld} label="Email" type="email" value=${lEmail} onChange=${setLEmail} placeholder="usuario@planta.com"/>
+        <${Fld} label="Contraseña" type="password" value=${lPass} onChange=${setLPass} placeholder="••••••••"/>
+        ${lErr&&html`<div style=${{color:C.d,fontSize:11,marginBottom:10,padding:'6px 10px',background:`${C.d}12`,borderRadius:5}}>${lErr}</div>`}
+        <button type="submit" style=${{width:'100%',background:C.ac,color:'#000',border:'none',padding:'11px',borderRadius:8,fontSize:14,fontWeight:700,cursor:'pointer'}}>INGRESAR →</button>
+      </form>
+      ${config.scriptUrl&&html`<div style=${{marginTop:12,fontSize:10,color:C.m,textAlign:'center'}}>☁ Conectado a Google Sheets</div>`}
+    </div>
+  </div>`;
+
+  // NAV
+  const NAV=[{id:'dashboard',icon:'🏭',l:'Dashboard'},{id:'temps',icon:'🌡',l:'Temperaturas'},{id:'historial',icon:'📋',l:'Historial'},{id:'ia',icon:'🤖',l:'IA Asistente'},{id:'gestion',icon:'⚙',l:'Gestión'}];
+
+  return html`<div style=${{display:'flex',height:'100vh',overflow:'hidden'}}>
+    <!-- Sidebar -->
+    <div style=${{width:52,background:C.s1,borderRight:`1px solid ${C.b}`,display:'flex',flexDirection:'column',alignItems:'center',padding:'10px 0',flexShrink:0}}>
+      <div style=${{fontSize:20,marginBottom:14}}>🧊</div>
+      ${NAV.map(n=>html`<button key=${n.id} onClick=${()=>setView(n.id)} title=${n.l}
+        style=${{width:'100%',padding:'10px 0',background:view===n.id?`${C.ac}18`:'none',border:'none',
+        borderLeft:`2px solid ${view===n.id?C.ac:'transparent'}`,cursor:'pointer',fontSize:18,marginBottom:2}}>
+        ${n.icon}
+        ${n.id==='dashboard'&&unacked.length>0&&html`<div style=${{position:'absolute',background:C.d,color:'#fff',borderRadius:'50%',width:14,height:14,fontSize:8,display:'flex',alignItems:'center',justifyContent:'center',marginTop:-28,marginLeft:10,fontWeight:700}}>${unacked.length}</div>`}
+      </button>`)}
+      <div style=${{flex:1}}/>
+      <div style=${{width:8,height:8,borderRadius:'50%',background:online?C.g:C.d,marginBottom:6}} title=${online?'Online':'Offline'}/>
+      ${config.scriptUrl&&html`<button onClick=${()=>loadFromSheets(config.scriptUrl)} disabled=${syncing||!online} title="Sync Sheets"
+        style=${{background:'none',border:'none',cursor:'pointer',fontSize:14,color:syncing?C.w:online?C.g:C.m,marginBottom:4}}>
+        ${syncing?html`<${Spin}/>`:'☁'}
+      </button>`}
+      <button onClick=${()=>{setUser(null);setView('login');}} title="Salir"
+        style=${{background:'none',border:'none',cursor:'pointer',color:C.m,fontSize:14,padding:'6px'}}>⏻</button>
+    </div>
+
+    <!-- Main -->
+    <div style=${{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}>
+      <!-- Header -->
+      <div style=${{background:C.s1,borderBottom:`1px solid ${C.b}`,padding:'8px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
+        <div>
+          <span style=${{fontFamily:'Orbitron,monospace',fontSize:12,color:C.ac,fontWeight:700}}>${NAV.find(n=>n.id===view)?.icon} ${NAV.find(n=>n.id===view)?.l}</span>
+          ${syncMsg&&html`<span style=${{fontSize:9,color:syncMsg.includes('✅')?C.g:syncMsg.includes('⚠')?C.w:C.m,marginLeft:10}}>${syncMsg}</span>`}
+        </div>
+        <div style=${{display:'flex',gap:8,alignItems:'center'}}>
+          <div style=${{display:'flex',gap:6}}>
+            ${[['LIBRES',coches.filter(c=>c.status==='libre').length,C.t2],['EN TÚNEL',coches.filter(c=>c.status==='en-tunel').length,C.w],[`${lbsEnTunel.toLocaleString()} LBS`,null,C.g],['MASTER',coches.filter(c=>c.status==='masterizando').length,'#aa88ff'],['🔔',unacked.length,C.d]].map(([l,v,c])=>html`<div key=${l} style=${{background:C.s3,border:`1px solid ${C.b}`,borderRadius:5,padding:'3px 8px',textAlign:'center'}}>
+              <div style=${{fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,color:c}}>${v!==null?v:''}</div>
+              <div style=${{fontSize:8,color:C.m}}>${l}</div>
+            </div>`)}
+          </div>
+          <div style=${{fontSize:11,color:C.t2,textAlign:'right'}}>
+            <div style=${{fontWeight:600}}>${user?.name}</div>
+            <div style=${{fontSize:9,color:C.m}}>${user?.cargo}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Content -->
+      <div style=${{flex:1,overflow:'auto'}}>
+        ${view==='dashboard'&&DashView()}
+        ${view==='temps'&&TempsView()}
+        ${view==='historial'&&HistorialView()}
+        ${view==='ia'&&IAView()}
+        ${view==='gestion'&&GestionView()}
+      </div>
+    </div>
+
+    <!-- MODALES -->
+    ${showCarga&&html`<${CargaRapidaModal} coche=${showCarga}
+      onSave=${c=>{const nc=coches.map(x=>x.id===c.id?c:x);setCoches(nc);autoSync(nc,null);setShowCarga(null);}}
+      onClose=${()=>setShowCarga(null)}/>`}
+    ${showCocheForm&&html`<${CocheFormModal} initial=${editCoche}
+      onSave=${c=>{const nc=editCoche?coches.map(x=>x.id===c.id?c:x):[...coches,c];setCoches(nc);autoSync(nc,null);setShowCocheForm(false);setEditCoche(null);}}
+      onClose=${()=>{setShowCocheForm(false);setEditCoche(null);}}/>`}
+    ${showBatch&&html`<${BatchModal} tunnel=${showBatch}
+      cochesLibres=${coches.filter(c=>c.status==='libre'&&(c.units||c.cajetas||0)>0)}
+      onConfirm=${batchEntry} onClose=${()=>setShowBatch(null)}/>`}
+    ${showVerif&&html`<${VerifModal} tunnel=${showVerif}
+      inTunel=${coches.filter(c=>c.tunnelId===showVerif.id&&c.status==='en-tunel')}
+      userName=${user?.name}
+      onSave=${log=>{setTempLogs(p=>[log,...p]);if(config.scriptUrl)enviarASheets('logTemp',log);}}
+      onRelease=${releaseTunnel} onClose=${()=>setShowVerif(null)}/>`}
+  </div>`;
+
+  // ── DASHBOARD ────────────────────────────────────────────────
+  function DashView(){
+    return html`<div style=${{padding:12,display:'grid',gridTemplateColumns:'160px 1fr 160px 150px',gap:10,minHeight:'calc(100vh - 90px)'}}>
+      <!-- Zona libre -->
+      <div onDragOver=${e=>e.preventDefault()} onDrop=${dropToFree} onDragEnter=${()=>setDragOver('free')} onDragLeave=${()=>setDragOver(null)}
+        style=${{background:C.s1,border:`2px dashed ${dragOver==='free'?C.ac:C.b}`,borderRadius:10,padding:10}}>
+        <div style=${{fontFamily:'Orbitron,monospace',fontSize:8,color:C.t2,marginBottom:6,letterSpacing:1}}>📦 ZONA LIBRE</div>
+        <div style=${{display:'flex',flexDirection:'column',gap:5}}>
+          ${coches.filter(c=>c.status==='libre'&&(c.units||c.cajetas||0)>0).map(c=>html`<${CocheCard} key=${c.id} c=${c} tunnels=${tunnels} dragging=${dragging} setDragging=${setDragging} setDragOver=${setDragOver} markReady=${markReady} setFree=${setFree} sendToMaster=${sendToMaster} now=${now}/>`)}
+          ${coches.filter(c=>c.status==='libre'&&!(c.units||c.cajetas||0)).map(c=>html`<div key=${c.id} style=${{background:C.s3,border:`1px dashed ${C.b}`,borderRadius:8,padding:8}}>
+            <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+              <span style=${{fontFamily:'Orbitron,monospace',fontSize:11,color:C.m,fontWeight:700}}>#${c.number}</span>
+              ${c.ciclos>0&&html`<${Tag} color=${C.m}>Ciclo ${c.ciclos}</${Tag}>`}
+            </div>
+            <div style=${{fontSize:9,color:C.m,marginBottom:5}}>${c.lastProduct?`Último: ${c.lastProduct.productName}`:'Vacío — sin producto'}</div>
+            <${Btn} sm=${true} full=${true} color=${C.ac} onClick=${()=>setShowCarga(c)}>⚡ Carga Rápida</${Btn}>
+          </div>`)}
+        </div>
+      </div>
+
+      <!-- Túneles -->
+      <div style=${{display:'flex',flexDirection:'column',gap:10}}>
+        ${tunnels.map(t=>{
+          const inT=coches.filter(c=>c.tunnelId===t.id&&c.status==='en-tunel');
+          const full=inT.length>=t.capacityCoches;const isDO=dragOver===t.id;
+          const lbsT=inT.reduce((a,c)=>a+(c.totalLbs||c.lbs||0),0);
+          const ready=inT.filter(c=>Date.now()-c.entryTime>=t.targetTimeHours*3600e3);
+          const lastL=tempLogs.find(l=>l.tunnelId===t.id);
+          return html`<div key=${t.id} onDragOver=${e=>{e.preventDefault();setDragOver(t.id);}} onDrop=${e=>dropToTunnel(e,t.id)} onDragLeave=${()=>setDragOver(null)}
+            style=${{background:C.s1,border:`2px solid ${ready.length?C.g:isDO?(full?C.d:t.color):C.b}`,borderRadius:10,padding:10,transition:'border-color .2s',
+            boxShadow:ready.length?`0 0 10px ${C.g}20`:'none'}}>
+            <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6,flexWrap:'wrap',gap:4}}>
+              <div style=${{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+                <div style=${{width:8,height:8,borderRadius:'50%',background:t.color}}/>
+                <span style=${{fontFamily:'Orbitron,monospace',fontWeight:700,fontSize:11,color:C.t}}>${t.name}</span>
+                <${Tag} color=${t.color}>${TT[t.type]?.l}</${Tag}>
+                <${Tag} color=${t.color}>${t.targetTemp}°C · ${t.targetTimeHours}h</${Tag}>
+                <${Tag} color=${C.g}>⚖ ${lbsT.toLocaleString()} lbs</${Tag}>
+                ${lastL&&html`<${Tag} color=${lastL.airTemp!=null&&Math.abs(lastL.airTemp-t.targetTemp)<=2?C.g:C.w}>🌡${lastL.airTemp??lastL.temp}°C</${Tag}>`}
+                ${ready.length>0&&html`<${Tag} color=${C.g}>✅ ${ready.length} listos</${Tag}>`}
+              </div>
+              <div style=${{display:'flex',gap:4,alignItems:'center'}}>
+                <span style=${{fontSize:10,fontFamily:'Orbitron,monospace',color:full?C.d:t.color}}>${inT.length}/${t.capacityCoches}</span>
+                <${Btn} sm=${true} color=${C.ac} onClick=${()=>setShowVerif({...t,_occ:inT.length})}>🔍 Verificar</${Btn}>
+                ${!full&&coches.some(c=>c.status==='libre'&&(c.units||c.cajetas||0)>0)&&html`<${Btn} sm=${true} color=${C.w} onClick=${()=>setShowBatch({...t,_occ:inT.length})}>🚛 Batch</${Btn}>`}
+                ${inT.length>0&&html`<${Btn} sm=${true} color=${C.g} onClick=${()=>{if(confirm(`¿Liberar todos los coches de ${t.name}?`))releaseTunnel(t.id,false);}}>🔓 Liberar</${Btn}>`}
+              </div>
+            </div>
+            <div style=${{background:C.s3,borderRadius:2,height:3,marginBottom:8}}>
+              <div style=${{background:t.color,borderRadius:2,height:'100%',width:`${pct(inT.length,t.capacityCoches)}%`,opacity:.7}}/>
+            </div>
+            <div style=${{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:5}}>
+              ${inT.map(c=>html`<${CocheCard} key=${c.id} c=${c} tunnels=${tunnels} inTunnel=${true} dragging=${dragging} setDragging=${setDragging} setDragOver=${setDragOver} markReady=${markReady} setFree=${setFree} sendToMaster=${sendToMaster} now=${now}/>`)}
+              ${!full&&html`<div style=${{border:`1px dashed ${isDO?t.color:C.b}`,borderRadius:6,display:'flex',alignItems:'center',justifyContent:'center',color:`${t.color}50`,fontSize:10,minHeight:60,flexDirection:'column',gap:3}}>
+                <span>${isDO?'↓ Soltar aquí':'+ Arrastra coche'}</span>
+              </div>`}
+            </div>
+          </div>`;
+        })}
+      </div>
+
+      <!-- Masterizando -->
+      <div style=${{background:C.s1,border:`2px dashed #aa88ff`,borderRadius:10,padding:10}}>
+        <div style=${{fontFamily:'Orbitron,monospace',fontSize:8,color:'#aa88ff',marginBottom:4,letterSpacing:1}}>🔄 MASTERIZANDO</div>
+        <div style=${{display:'flex',flexDirection:'column',gap:6}}>
+          ${coches.filter(c=>c.status==='masterizando').map(c=>{
+            const mMs=c.masterTime?now-c.masterTime:0;
+            return html`<div key=${c.id} style=${{background:C.s3,border:'1px solid #aa88ff30',borderRadius:8,padding:9}}>
+              <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3}}>
+                <span style=${{fontFamily:'Orbitron,monospace',fontWeight:700,fontSize:12,color:C.t}}>#${c.number}</span>
+                <${Tag} color=${'#aa88ff'}>Ciclo ${(c.ciclos||0)+1}</${Tag}>
+              </div>
+              <div style=${{fontSize:10,color:C.t2,marginBottom:2}}>${c.productName}</div>
+              <div style=${{fontSize:10,color:C.ac,marginBottom:2}}>📦 ${c.units||c.cajetas||0} ${c.unitType==='funda'?'fundas':'cajas'}</div>
+              <div style=${{fontSize:10,color:C.g,marginBottom:4}}>⚖ ${(c.totalLbs||c.lbs||0).toLocaleString()} lbs</div>
+              <div style=${{fontSize:9,color:'#aa88ff',marginBottom:6}}>⏱ ${elpS(mMs)}</div>
+              <${Btn} sm=${true} full=${true} color=${C.g} onClick=${()=>vaciarCoche(c.id)}>✅ Vaciar Coche</${Btn}>
+            </div>`;
+          })}
+          ${coches.filter(c=>c.status==='masterizando').length===0&&html`<div style=${{color:C.m,fontSize:10,textAlign:'center',padding:16}}>Sin coches en masterizado</div>`}
+        </div>
+      </div>
+
+      <!-- Alarmas -->
+      <div style=${{background:C.s1,border:`1px solid ${C.b}`,borderRadius:10,padding:10}}>
+        <div style=${{fontFamily:'Orbitron,monospace',fontSize:8,color:C.d,marginBottom:8,letterSpacing:1}}>🔔 ALARMAS</div>
+        ${unacked.length===0&&html`<div style=${{fontSize:10,color:C.m,textAlign:'center',padding:10}}>Sin alarmas</div>`}
+        ${[...unacked].reverse().slice(0,8).map(a=>html`<div key=${a.id} style=${{background:C.s3,borderRadius:6,padding:7,marginBottom:5,borderLeft:`3px solid ${a.type==='product-ready'?C.g:a.type==='temp-alert'||a.type==='falla'?C.d:C.w}`}}>
+          <div style=${{fontSize:9,color:C.t,marginBottom:3}}>${a.msg}</div>
+          <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <span style=${{fontSize:8,color:C.m}}>${fmtT(a.createdAt)}</span>
+            <button onClick=${()=>setAlarms(p=>p.map(x=>x.id===a.id?{...x,ack:true}:x))}
+              style=${{background:'none',border:`1px solid ${C.m}`,color:C.m,borderRadius:4,padding:'1px 6px',cursor:'pointer',fontSize:8}}>OK</button>
+          </div>
+        </div>`)}
+      </div>
+    </div>`;
+  }
+
+  // ── TEMPERATURAS ─────────────────────────────────────────────
+  function TempsView(){
+    const actT=tunnels.find(t=>t.id===selTunnel)||tunnels[0];
+    const tLogs=tempLogs.filter(l=>l.tunnelId===(actT?.id)).sort((a,b)=>b.timestamp-a.timestamp);
+    const inT=coches.filter(c=>c.tunnelId===actT?.id&&c.status==='en-tunel');
+    const [tf,setTf]=useState({airTemp:'',prodTemp:'',estado:'normal',notes:''});
+    const sf=(k,v)=>setTf(p=>({...p,[k]:v}));
+    const ESTADOS=[{v:'normal',l:'✅ Normal',c:C.g},{v:'defrost',l:'🔄 Defrost',c:C.w},{v:'falla',l:'🔴 Falla',c:C.d},{v:'recuperacion',l:'📉 Recuperación',c:'#aa88ff'},{v:'listo',l:'🏁 Listo',c:'#00e888'}];
+    const ec={normal:C.g,defrost:C.w,falla:C.d,recuperacion:'#aa88ff',listo:'#00e888'};
+    const ei={normal:'✅',defrost:'🔄',falla:'🔴',recuperacion:'📉',listo:'🏁'};
+    const aD=tf.airTemp?Math.abs(+tf.airTemp-(actT?.targetTemp||0)):null;
+    const aC=aD===null?C.t2:aD<=2?C.g:aD<=5?C.w:C.d;
+    const pD=tf.prodTemp?Math.abs(+tf.prodTemp-(actT?.targetTemp||0)):null;
+    const pC=pD===null?C.t2:+tf.prodTemp<=(actT?.targetTemp||0)+1?C.g:pD<=3?C.w:C.t2;
+    const saveTemp=()=>{
+      if(!tf.airTemp&&!tf.prodTemp)return;
+      const log={id:gid(),tunnelId:actT.id,tunnelName:actT.name,tunnelType:actT.type,
+        airTemp:tf.airTemp?+tf.airTemp:null,prodTemp:tf.prodTemp?+tf.prodTemp:null,
+        temp:tf.airTemp?+tf.airTemp:(tf.prodTemp?+tf.prodTemp:0),
+        targetTemp:actT.targetTemp,estado:tf.estado,notes:tf.notes,userName:user?.name,timestamp:Date.now()};
+      setTempLogs(p=>[log,...p]);
+      if(config.scriptUrl)enviarASheets('logTemp',log);
+      setTf({airTemp:'',prodTemp:'',estado:'normal',notes:''});setShowTempForm(false);
+    };
+    return html`<div style=${{display:'grid',gridTemplateColumns:'200px 1fr',gap:0,height:'calc(100vh - 90px)'}}>
+      <!-- Selector túneles -->
+      <div style=${{background:C.s1,borderRight:`1px solid ${C.b}`,padding:12,overflowY:'auto'}}>
+        <div style=${{fontFamily:'Orbitron,monospace',fontSize:9,color:C.m,marginBottom:10,letterSpacing:1}}>TÚNELES</div>
+        ${tunnels.map(t=>{
+          const logs=tempLogs.filter(l=>l.tunnelId===t.id);const last=logs[0];
+          const lA=last?.airTemp??last?.temp;const lP=last?.prodTemp;
+          const dA=lA!=null?Math.abs(lA-t.targetTemp):null;
+          const dC=dA===null?C.m:dA<=2?C.g:dA<=5?C.w:C.d;
+          const inTc=coches.filter(c=>c.tunnelId===t.id&&c.status==='en-tunel').length;
+          const active=(selTunnel||tunnels[0]?.id)===t.id;
+          return html`<button key=${t.id} onClick=${()=>setSelTunnel(t.id)}
+            style=${{width:'100%',background:active?`${t.color}18`:C.s3,border:`2px solid ${active?t.color:C.b}`,borderRadius:10,padding:10,cursor:'pointer',marginBottom:6,textAlign:'left',transition:'all .15s'}}>
+            <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+              <span style=${{fontFamily:'Orbitron,monospace',fontWeight:700,fontSize:10,color:active?t.color:C.t}}>${t.name.split(' ').slice(-2).join(' ')}</span>
+              <${Tag} color=${t.color}>${TT[t.type]?.l}</${Tag}>
+            </div>
+            <div style=${{display:'flex',gap:10}}>
+              <div><div style=${{fontSize:8,color:C.m}}>AIRE</div><div style=${{fontFamily:'Orbitron,monospace',fontSize:16,color:dC,fontWeight:700}}>${lA!=null?`${lA}°C`:'—'}</div></div>
+              <div><div style=${{fontSize:8,color:C.m}}>PROD</div><div style=${{fontFamily:'Orbitron,monospace',fontSize:16,color:lP!=null?C.g:C.m,fontWeight:700}}>${lP!=null?`${lP}°C`:'—'}</div></div>
+              <div style=${{marginLeft:'auto'}}><div style=${{fontSize:8,color:C.m}}>COCHES</div><div style=${{fontFamily:'Orbitron,monospace',fontSize:14,color:inTc>0?C.w:C.m}}>${inTc}</div></div>
+            </div>
+            <div style=${{fontSize:9,color:C.m,marginTop:3}}>${logs.length} registros</div>
+          </button>`;
+        })}
+      </div>
+      <!-- Timeline -->
+      <div style=${{padding:14,overflowY:'auto',display:'flex',flexDirection:'column',gap:10}}>
+        <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div>
+            <div style=${{fontFamily:'Orbitron,monospace',fontSize:13,color:actT?.color,fontWeight:700}}>${actT?.name}</div>
+            <div style=${{fontSize:10,color:C.m,marginTop:2}}>${TT[actT?.type]?.l} · Objetivo: ${actT?.targetTemp}°C · ${inT.length} coches dentro</div>
+          </div>
+          <${Btn} onClick=${()=>setShowTempForm(p=>!p)} color=${C.ac}>${showTempForm?'✕ Cancelar':'+ Nuevo Registro'}</${Btn}>
+        </div>
+        ${inT.length>0&&html`<div style=${{background:C.s1,border:`1px solid ${actT?.color}30`,borderRadius:8,padding:10}}>
+          <div style=${{fontSize:9,color:C.m,marginBottom:6,textTransform:'uppercase',letterSpacing:.8}}>Coches activos</div>
+          <div style=${{display:'flex',flexWrap:'wrap',gap:6}}>
+            ${inT.map(c=>{const el=now-c.entryTime;const tc2=tcol(el,actT?.targetTimeHours);
+              return html`<div key=${c.id} style=${{background:C.s3,borderRadius:6,padding:'6px 10px',border:`1px solid ${tc2}40`}}>
+                <div style=${{fontFamily:'Orbitron,monospace',fontWeight:700,fontSize:11,color:C.t}}>#${c.number}</div>
+                <div style=${{fontSize:9,color:C.t2}}>${c.productName} · ${c.units||c.cajetas||0} ${c.unitType==='funda'?'f':'c'}</div>
+                <div style=${{fontSize:10,color:C.g}}>⚖ ${(c.totalLbs||c.lbs||0).toLocaleString()} lbs</div>
+                <div style=${{fontFamily:'Orbitron,monospace',fontSize:10,color:tc2}}>${elp(el)}</div>
+                <div style=${{background:C.s2,borderRadius:2,height:3,marginTop:2}}>
+                  <div style=${{background:tc2,borderRadius:2,height:'100%',width:`${Math.min(100,pct(el,actT?.targetTimeHours*3600e3))}%`}}/>
+                </div>
+              </div>`;
+            })}
+          </div>
+        </div>`}
+        ${showTempForm&&actT&&html`<div style=${{background:C.s1,border:`2px solid ${actT.color}`,borderRadius:10,padding:14}} class="fade">
+          <div style=${{fontFamily:'Orbitron,monospace',fontSize:10,color:actT.color,marginBottom:12}}>📝 NUEVO REGISTRO — ${actT.name}</div>
+          <div style=${{display:'flex',flexWrap:'wrap',gap:5,marginBottom:12}}>
+            ${ESTADOS.map(e=>html`<button key=${e.v} onClick=${()=>sf('estado',e.v)}
+              style=${{padding:'5px 10px',borderRadius:6,border:`1px solid ${tf.estado===e.v?e.c:C.b}`,
+              background:tf.estado===e.v?`${e.c}18`:C.s3,color:tf.estado===e.v?e.c:C.t2,cursor:'pointer',fontSize:11}}>${e.l}</button>`)}
+          </div>
+          <div style=${{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+            <div>
+              <div style=${{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase',letterSpacing:.8}}>🌡 Temp AIRE (°C)</div>
+              <input type="number" value=${tf.airTemp} onInput=${e=>sf('airTemp',e.target.value)} placeholder=${String(actT.targetTemp)}
+                style=${{width:'100%',background:C.s3,border:`1px solid ${tf.airTemp?aC:C.b}`,borderRadius:6,padding:'8px 10px',color:C.t,fontSize:14,fontFamily:'Orbitron,monospace'}}/>
+              ${tf.airTemp&&html`<div style=${{fontSize:10,color:aC,marginTop:2}}>
+                ${aD<=2?'✅ Correcto':aD<=5?`⚠ Δ${aD}°C`:tf.estado==='defrost'?`🔄 Defrost Δ${aD}°C`:`🔴 CRÍTICO Δ${aD}°C`}
+              </div>`}
+            </div>
+            <div>
+              <div style=${{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase',letterSpacing:.8}}>🧊 Temp PRODUCTO (°C)</div>
+              <input type="number" value=${tf.prodTemp} onInput=${e=>sf('prodTemp',e.target.value)} placeholder=${String(actT.targetTemp)}
+                style=${{width:'100%',background:C.s3,border:`1px solid ${tf.prodTemp?pC:C.b}`,borderRadius:6,padding:'8px 10px',color:C.t,fontSize:14,fontFamily:'Orbitron,monospace'}}/>
+              ${tf.prodTemp&&html`<div style=${{fontSize:10,color:pC,marginTop:2}}>
+                ${+tf.prodTemp<=actT.targetTemp+1?'✅ ¡Producto listo!':pD<=3?`⚠ Casi listo`:pD<=8?`❄ En proceso`:`❌ Aún caliente`} (Δ${pD}°C)
+              </div>`}
+            </div>
+          </div>
+          <${Fld} label="Observaciones" value=${tf.notes} onChange=${v=>sf('notes',v)} placeholder="Defrost iniciado, compresor ajustado, todo normal..." rows=${2}/>
+          <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div style=${{fontSize:9,color:C.m}}>👤 ${user?.name} · ${new Date().toLocaleTimeString('es-EC')}</div>
+            <div style=${{display:'flex',gap:6}}>
+              <${Btn} onClick=${()=>setShowTempForm(false)} color=${C.m}>Cancelar</${Btn}>
+              <${Btn} onClick=${saveTemp} disabled=${!tf.airTemp&&!tf.prodTemp} color=${actT.color}>💾 Guardar</${Btn}>
+            </div>
+          </div>
+        </div>`}
+        <div style=${{fontFamily:'Orbitron,monospace',fontSize:9,color:C.m,letterSpacing:1}}>${tLogs.length} REGISTROS</div>
+        ${tLogs.map((l,i)=>{
+          const ec2=ec[l.estado]||C.g;const ei2=ei[l.estado]||'✅';
+          const aD2=l.airTemp!=null?Math.abs(l.airTemp-(l.targetTemp||0)):null;
+          const pD2=l.prodTemp!=null?Math.abs(l.prodTemp-(l.targetTemp||0)):null;
+          return html`<div key=${l.id} style=${{display:'flex',gap:10,marginBottom:0}}>
+            <div style=${{display:'flex',flexDirection:'column',alignItems:'center',flexShrink:0}}>
+              <div style=${{width:28,height:28,borderRadius:'50%',background:`${ec2}20`,border:`2px solid ${ec2}`,
+                display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,
+                boxShadow:i===0?`0 0 8px ${ec2}50`:'none'}}>${ei2}</div>
+              ${i<tLogs.length-1&&html`<div style=${{width:2,flex:1,minHeight:20,background:C.b,margin:'3px 0'}}/>`}
+            </div>
+            <div style=${{background:C.s1,border:`1px solid ${i===0?ec2+'50':C.b}`,borderRadius:8,padding:'10px 12px',marginBottom:8,flex:1}}>
+              <div style=${{display:'flex',justifyContent:'space-between',marginBottom:6}}>
+                <div style=${{display:'flex',gap:6,alignItems:'center'}}>
+                  <${Tag} color=${ec2}>${ESTADOS.find(e=>e.v===l.estado)?.l||l.estado}</${Tag}>
+                  ${i===0&&html`<${Tag} color=${actT?.color}>Último</${Tag}>`}
+                </div>
+                <div style=${{textAlign:'right'}}>
+                  <div style=${{fontSize:10,color:C.t2}}>${fmtT(l.timestamp)}</div>
+                  <div style=${{fontSize:9,color:C.m}}>${new Date(l.timestamp).toLocaleDateString('es-EC')}</div>
+                </div>
+              </div>
+              <div style=${{display:'flex',gap:10,flexWrap:'wrap',marginBottom:l.notes?6:0}}>
+                ${l.airTemp!=null&&html`<div style=${{background:C.s3,borderRadius:6,padding:'5px 10px',minWidth:80}}>
+                  <div style=${{fontSize:8,color:C.m,marginBottom:1}}>AIRE</div>
+                  <div style=${{fontFamily:'Orbitron,monospace',fontSize:18,fontWeight:700,color:aD2<=2?C.g:aD2<=5?C.w:l.estado==='defrost'?C.w:C.d}}>${l.airTemp}°C</div>
+                  ${aD2!=null&&html`<div style=${{fontSize:9,color:C.m}}>Δ${aD2}°C</div>`}
+                </div>`}
+                ${l.prodTemp!=null&&html`<div style=${{background:C.s3,borderRadius:6,padding:'5px 10px',minWidth:80}}>
+                  <div style=${{fontSize:8,color:C.m,marginBottom:1}}>PRODUCTO</div>
+                  <div style=${{fontFamily:'Orbitron,monospace',fontSize:18,fontWeight:700,color:l.prodTemp<=(l.targetTemp||0)+1?C.g:pD2<=3?C.w:C.t2}}>${l.prodTemp}°C</div>
+                  ${pD2!=null&&html`<div style=${{fontSize:9,color:C.m}}>Δ${pD2}°C</div>`}
+                </div>`}
+                <div style=${{marginLeft:'auto',alignSelf:'flex-end',fontSize:11,color:C.t2,fontWeight:600}}>👤 ${l.userName}</div>
+              </div>
+              ${l.notes&&html`<div style=${{fontSize:10,color:C.t2,padding:'5px 8px',background:C.s3,borderRadius:5,borderLeft:`3px solid ${ec2}`}}>${l.notes}</div>`}
+            </div>
+          </div>`;
+        })}
+        ${tLogs.length===0&&html`<div style=${{textAlign:'center',padding:30,color:C.m}}>Sin registros. Usa "+ Nuevo Registro" para empezar el seguimiento.</div>`}
+      </div>
+    </div>`;
+  }
+
+  // ── HISTORIAL ─────────────────────────────────────────────────
+  function HistorialView(){
+    const [filtro,setFiltro]=useState('');
+    const hist=history.filter(h=>!filtro||h.productName?.toLowerCase().includes(filtro.toLowerCase())||h.number?.includes(filtro)||h.tunnelName?.toLowerCase().includes(filtro.toLowerCase()));
+    return html`<div style=${{padding:14}}>
+      <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14,flexWrap:'wrap',gap:8}}>
+        <div style=${{fontFamily:'Orbitron,monospace',fontSize:12,color:C.ac}}>📋 HISTORIAL — ${hist.length} registros</div>
+        <div style=${{display:'flex',gap:8}}>
+          <input value=${filtro} onInput=${e=>setFiltro(e.target.value)} placeholder="Buscar por coche, producto o túnel..."
+            style=${{background:C.s3,border:`1px solid ${C.b}`,borderRadius:6,padding:'6px 12px',color:C.t,fontSize:11,width:220}}/>
+          <${Btn} onClick=${exportExcel} color=${C.g}>📥 Descargar Excel</${Btn}>
+        </div>
+      </div>
+      ${hist.length===0&&html`<div style=${{textAlign:'center',padding:40,color:C.m}}>Sin registros en el historial.</div>`}
+      ${hist.map(h=>{
+        const sh=SHIFTS.find(s=>s.id===h.shift);
+        const hrs=h.horasEnTunel||((h.exitTime&&h.entryTime)?((h.exitTime-h.entryTime)/3600000).toFixed(1):0);
+        const oC=h.outsideMin>=MAX_OUT?C.d:h.outsideMin>=MAX_OUT*.7?C.w:C.g;
+        return html`<div key=${h.id} style=${{background:C.s1,border:`1px solid ${C.b}`,borderRadius:8,padding:'10px 14px',marginBottom:6,display:'grid',gridTemplateColumns:'auto 1fr auto',gap:12,alignItems:'center'}} class="fade">
+          <div style=${{fontFamily:'Orbitron,monospace',fontSize:15,fontWeight:700,color:C.t}}>#${h.number}</div>
+          <div>
+            <div style=${{fontSize:12,color:C.t,marginBottom:2}}>${h.productName} · ${h.tunnelName}</div>
+            <div style=${{display:'flex',gap:8,flexWrap:'wrap'}}>
+              <span style=${{fontSize:10,color:C.ac}}>📦 ${h.units||h.cajetas||0} ${h.unitType==='funda'?'fundas':'cajas'}</span>
+              <span style=${{fontSize:10,color:C.g,fontWeight:700}}>⚖ ${(h.totalLbs||h.lbs||0).toLocaleString()} lbs</span>
+              <span style=${{fontSize:10,color:C.m}}>${h.weightPerUnit||0}${h.weightUnit||'lbs'}/und</span>
+            </div>
+            <div style=${{fontSize:9,color:C.m,marginTop:2}}>
+              ${h.productLoadTime?`Carga: ${fmtT(h.productLoadTime)} → `:''}Entrada: ${fmtT(h.entryTime)} → Salida: ${fmtT(h.exitTime)}
+            </div>
+          </div>
+          <div style=${{textAlign:'right'}}>
+            <div style=${{fontFamily:'Orbitron,monospace',fontSize:12,color:C.g,marginBottom:2}}>${hrs}h túnel</div>
+            ${h.outsideMin>0&&html`<div style=${{fontSize:10,color:oC,fontWeight:600}}>⏱ ${h.outsideMin}min afuera</div>`}
+            ${sh&&html`<${Tag} color=${sh.c}>${sh.l}</${Tag}>`}
+          </div>
+        </div>`;
+      })}
+    </div>`;
+  }
+
+  // ── IA ───────────────────────────────────────────────────────
+  function IAView(){
+    const quick=['¿Qué coches están listos?','¿Hay temperatura anormal o defrost?','¿Qué coche lleva más tiempo afuera?','Resumen del turno actual','¿Qué túnel tiene más lbs?'];
+    return html`<div style=${{display:'flex',flexDirection:'column',height:'calc(100vh - 90px)'}}>
+      <div style=${{flex:1,overflowY:'auto',padding:14,display:'flex',flexDirection:'column',gap:8}}>
+        ${aiMsgs.map((m,i)=>html`<div key=${i} style=${{display:'flex',justifyContent:m.role==='user'?'flex-end':'flex-start'}}>
+          <div style=${{background:m.role==='user'?`${C.ac}18`:C.s1,border:`1px solid ${m.role==='user'?C.ac:C.b}`,borderRadius:10,padding:'8px 12px',maxWidth:'80%',fontSize:12,color:C.t,lineHeight:1.5}}>${m.content}</div>
+        </div>`)}
+        ${aiLoading&&html`<div style=${{display:'flex',justifyContent:'flex-start'}}>
+          <div style=${{background:C.s1,border:`1px solid ${C.b}`,borderRadius:10,padding:'10px 14px',color:C.ac}}>
+            <${Spin}/> Consultando...
+          </div>
+        </div>`}
+        <div ref=${aiEnd}/>
+      </div>
+      <div style=${{padding:'8px 14px',borderTop:`1px solid ${C.b}`,background:C.s1}}>
+        <div style=${{display:'flex',flexWrap:'wrap',gap:4,marginBottom:8}}>
+          ${quick.map(q=>html`<button key=${q} onClick=${()=>setAiInput(q)}
+            style=${{background:C.s3,border:`1px solid ${C.b}`,color:C.t2,padding:'3px 8px',borderRadius:12,cursor:'pointer',fontSize:10}}>${q}</button>`)}
+        </div>
+        <div style=${{display:'flex',gap:8}}>
+          <input value=${aiInput} onInput=${e=>setAiInput(e.target.value)} onKeyDown=${e=>e.key==='Enter'&&sendAI()} placeholder="Pregunta sobre el estado de los túneles..."
+            style=${{flex:1,background:C.s3,border:`1px solid ${C.b}`,borderRadius:8,padding:'9px 12px',color:C.t,fontSize:12}}/>
+          <${Btn} onClick=${sendAI} disabled=${!aiInput.trim()||aiLoading} color=${C.ac}>Enviar →</${Btn}>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // ── GESTIÓN ──────────────────────────────────────────────────
+  function GestionView(){
+    const [tab,setTab]=useState('coches');
+    return html`<div style=${{padding:14}}>
+      <div style=${{display:'flex',gap:4,marginBottom:14,borderBottom:`1px solid ${C.b}`,paddingBottom:10}}>
+        ${[['coches','🚛 Coches'],['tuneles','🧊 Túneles'],['config','⚙ Config']].map(([id,l])=>html`<button key=${id} onClick=${()=>setTab(id)}
+          style=${{padding:'5px 14px',borderRadius:6,border:`1px solid ${tab===id?C.ac:C.b}`,background:tab===id?`${C.ac}18`:C.s3,color:tab===id?C.ac:C.t2,cursor:'pointer',fontSize:11,fontWeight:600}}>${l}</button>`)}
+      </div>
+      ${tab==='coches'&&html`<div>
+        <div style=${{display:'flex',justifyContent:'space-between',marginBottom:10}}>
+          <span style=${{fontFamily:'Orbitron,monospace',fontSize:11,color:C.t2}}>${coches.length} coches registrados</span>
+          <${Btn} onClick=${()=>{setEditCoche(null);setShowCocheForm(true);}} color=${C.g}>+ Nuevo Coche</${Btn}>
+        </div>
+        <div style=${{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:8}}>
+          ${coches.map(c=>{const t=tunnels.find(x=>x.id===c.tunnelId);const el=c.entryTime?Date.now()-c.entryTime:0;
+            return html`<div key=${c.id} style=${{background:C.s1,border:`1px solid ${C.b}`,borderRadius:8,padding:12}} class="fade">
+              <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                <span style=${{fontFamily:'Orbitron,monospace',fontWeight:700,fontSize:14,color:C.t}}>#${c.number}</span>
+                <${Tag} color=${c.status==='en-tunel'?C.w:c.status==='masterizando'?'#aa88ff':C.t2}>${c.status}</${Tag}>
+              </div>
+              ${[['Producto',c.productName||'—'],['Tipo',c.unitType==='funda'?'Fundas':'Cajas'],[`${c.unitType==='funda'?'Fundas':'Cajas'}`,`${c.units||c.cajetas||0}`],['Peso/und',`${c.weightPerUnit||0} ${c.weightUnit||'lbs'}`],['Total Lbs',`${(c.totalLbs||c.lbs||0).toLocaleString()} lbs`],['Túnel',t?.name||'—'],['Ciclos',c.ciclos||0]].map(([k,v])=>html`<div key=${k} style=${{display:'flex',justifyContent:'space-between',fontSize:11,padding:'2px 0',borderBottom:`1px solid ${C.b}25`}}>
+                <span style=${{color:C.m}}>${k}</span><span style=${{color:k==='Total Lbs'?C.g:C.t,fontWeight:k==='Total Lbs'?700:400}}>${v}</span>
+              </div>`)}
+              ${c.status==='en-tunel'&&html`<div style=${{marginTop:6}}>
+                <div style=${{display:'flex',justifyContent:'space-between',fontSize:9,marginBottom:2}}><span style=${{color:C.m}}>EN TÚNEL</span><span style=${{color:tcol(el,t?.targetTimeHours),fontFamily:'Orbitron,monospace'}}>${elp(el)}</span></div>
+                <div style=${{background:C.s3,borderRadius:2,height:3}}><div style=${{background:tcol(el,t?.targetTimeHours),borderRadius:2,height:'100%',width:`${pct(el,(t?.targetTimeHours||1)*3600e3)}%`}}/></div>
+              </div>`}
+              <div style=${{display:'flex',gap:5,marginTop:8}}>
+                <${Btn} sm=${true} color=${C.ac} onClick=${()=>{setEditCoche(c);setShowCocheForm(true);}}>✏ Editar</${Btn}>
+                <${Btn} sm=${true} color=${C.d} onClick=${()=>{if(!confirm(`¿Eliminar coche #${c.number}?`))return;const nc=coches.filter(x=>x.id!==c.id);setCoches(nc);autoSync(nc,null);if(config.scriptUrl)enviarASheets('deleteCoche',{cocheId:c.id});}}>✕ Eliminar</${Btn}>
+              </div>
+            </div>`;
+          })}
+        </div>
+      </div>`}
+      ${tab==='tuneles'&&html`<div>
+        <div style=${{display:'flex',justifyContent:'space-between',marginBottom:10}}>
+          <span style=${{fontFamily:'Orbitron,monospace',fontSize:11,color:C.t2}}>${tunnels.length} túneles</span>
+        </div>
+        <div style=${{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))',gap:8}}>
+          ${tunnels.map(t=>{const inT=coches.filter(c=>c.tunnelId===t.id&&c.status==='en-tunel');const lbs=inT.reduce((a,c)=>a+(c.totalLbs||c.lbs||0),0);
+            return html`<div key=${t.id} style=${{background:C.s1,border:`2px solid ${t.color}40`,borderRadius:10,padding:14}} class="fade">
+              <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                <div style=${{fontFamily:'Orbitron,monospace',fontWeight:700,fontSize:12,color:t.color}}>${t.name}</div>
+                <${Tag} color=${t.color}>${TT[t.type]?.l}</${Tag}>
+              </div>
+              ${[['Temp objetivo',`${t.targetTemp}°C`],['Tiempo',`${t.targetTimeHours}h`],['Capacidad',`${inT.length}/${t.capacityCoches} coches`],['Lbs en túnel',`${lbs.toLocaleString()} lbs`],['Revisión temp',`Cada ${t.checkIntervalMin}min`]].map(([k,v])=>html`<div key=${k} style=${{display:'flex',justifyContent:'space-between',fontSize:11,padding:'3px 0',borderBottom:`1px solid ${C.b}25`}}>
+                <span style=${{color:C.m}}>${k}</span><span style=${{color:C.t}}>${v}</span>
+              </div>`)}
+              <div style=${{background:C.s3,borderRadius:2,height:4,marginTop:8}}>
+                <div style=${{background:t.color,borderRadius:2,height:'100%',width:`${pct(inT.length,t.capacityCoches)}%`,opacity:.8}}/>
+              </div>
+            </div>`;
+          })}
+        </div>
+      </div>`}
+      ${tab==='config'&&html`<div style=${{maxWidth:600}}>
+        <div style=${{background:C.s1,border:`1px solid ${C.b}`,borderRadius:10,padding:16,marginBottom:12}}>
+          <div style=${{fontFamily:'Orbitron,monospace',fontSize:10,color:C.ac,marginBottom:12}}>☁ GOOGLE SHEETS</div>
+          <${Fld} label="URL del script /exec" value=${config.scriptUrl} onChange=${v=>setConfig(p=>({...p,scriptUrl:v.trim()}))} placeholder="https://script.google.com/macros/s/.../exec"/>
+          <div style=${{display:'flex',gap:8,marginBottom:8}}>
+            <${Btn} onClick=${()=>loadFromSheets(config.scriptUrl)} disabled=${syncing||!config.scriptUrl||!online} color=${C.g}>${syncing?html`<${Spin}/> Cargando...`:'↓ Cargar desde Sheets'}</${Btn}>
+            <${Btn} onClick=${()=>{if(!config.scriptUrl)return;setSyncing(true);gasGet(config.scriptUrl,'syncAll',{tunnels,coches}).then(r=>setSyncMsg(r.ok?'✅ Sincronizado':'❌ Error')).catch(()=>setSyncMsg('❌ Error')).finally(()=>setSyncing(false));}} disabled=${syncing||!config.scriptUrl||!online} color=${C.ac}>${syncing?html`<${Spin}/>`:'☁ Subir a Sheets'}</${Btn}>
+          </div>
+          ${syncMsg&&html`<div style=${{fontSize:10,color:syncMsg.includes('✅')?C.g:C.d,padding:'5px 8px',background:syncMsg.includes('✅')?`${C.g}10`:`${C.d}10`,borderRadius:5}}>${syncMsg}</div>`}
+        </div>
+        <div style=${{background:C.s1,border:`1px solid ${C.b}`,borderRadius:10,padding:16,marginBottom:12}}>
+          <div style=${{fontFamily:'Orbitron,monospace',fontSize:10,color:C.w,marginBottom:12}}>🔔 NOTIFICACIONES (ntfy.sh)</div>
+          <${Fld} label="Canal ntfy (nombre único de tu planta)" value=${config.ntfyTopic} onChange=${v=>setConfig(p=>({...p,ntfyTopic:v.toLowerCase().replace(/[^a-z0-9-]/g,'')}))} placeholder="freeze-planta-2024"/>
+          ${config.ntfyTopic&&html`<div style=${{background:`${C.g}10`,border:`1px solid ${C.g}30`,borderRadius:6,padding:10,marginBottom:8}}>
+            <div style=${{fontSize:10,color:C.g,marginBottom:4}}>Canal: ntfy.sh/${config.ntfyTopic}</div>
+            <div style=${{fontSize:10,color:C.t2,marginBottom:6}}>Comparte este link con tu equipo para que se suscriban:</div>
+            <div style=${{fontFamily:'monospace',fontSize:11,color:C.ac,wordBreak:'break-all'}}>https://ntfy.sh/${config.ntfyTopic}</div>
+            <div style=${{display:'flex',gap:6,marginTop:8}}>
+              <${Btn} sm=${true} color=${C.ac} onClick=${()=>window.open(`https://ntfy.sh/${config.ntfyTopic}`)}>🔗 Abrir</${Btn}>
+              <${Btn} sm=${true} color=${C.m} onClick=${()=>navigator.clipboard?.writeText(`https://ntfy.sh/${config.ntfyTopic}`)}>📋 Copiar</${Btn}>
+              <${Btn} sm=${true} color=${C.w} onClick=${()=>fetch(`https://ntfy.sh/${config.ntfyTopic}`,{method:'POST',headers:{'Title':'❄ FREEZE CONTROL','Tags':'white_check_mark','Content-Type':'text/plain'},body:'🧊 Prueba — Notificaciones funcionando ✅'})}>🔔 Probar</${Btn}>
+            </div>
+          </div>`}
+          <div style=${{display:'flex',gap:8,alignItems:'center',marginTop:8}}>
+            <div style=${{width:8,height:8,borderRadius:'50%',background:typeof Notification!=='undefined'&&Notification.permission==='granted'?C.g:C.d}}/>
+            <span style=${{fontSize:10,color:C.t2}}>Notificaciones del navegador: ${typeof Notification!=='undefined'?Notification.permission:'no soportado'}</span>
+            ${typeof Notification!=='undefined'&&Notification.permission!=='granted'&&html`<${Btn} sm=${true} color=${C.ac} onClick=${()=>Notification.requestPermission()}>Activar</${Btn}>`}
+          </div>
+        </div>
+        <div style=${{background:C.s1,border:`1px solid ${C.b}`,borderRadius:10,padding:16}}>
+          <div style=${{fontFamily:'Orbitron,monospace',fontSize:10,color:C.g,marginBottom:12}}>📥 EXPORTAR DATOS</div>
+          <${Btn} onClick=${exportExcel} color=${C.g}>📥 Descargar Reporte Excel (.xlsx)</${Btn}>
+          <div style=${{fontSize:10,color:C.m,marginTop:6}}>Incluye: Coches actuales · Historial completo · Temperaturas</div>
+        </div>
+      </div>`}
+    </div>`;
+  }
+}
+
+// Ocultar splash y renderizar
+setTimeout(()=>{
+  try{
+    ReactDOM.createRoot(document.getElementById('root')).render(html`<${App}/>`);
+    setTimeout(()=>document.getElementById('splash')?.classList.add('hide'),300);
+  }catch(e){
+    document.getElementById('splash').innerHTML=`<div style="color:#ff3366;font-family:monospace;padding:20px;max-width:600px">Error al cargar: ${e.message}<br/><br/><small>${e.stack}</small></div>`;
+  }
+},0);
+</script>
+</body>
+</html>
