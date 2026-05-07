@@ -410,10 +410,18 @@ function MCocheForm(p){
   var ini=p.initial,def=PRODS[0];
   var _f=useState(ini?Object.assign({},ini):{id:'',number:'',productName:def.name,unitType:def.unitType,units:0,weightPerUnit:def.weightPerUnit,weightUnit:def.weightUnit,status:'libre',tunnelId:null,entryTime:null,exitTime:null,productLoadTime:null,ciclos:0,lastProduct:null});
   var f=_f[0],sf=_f[1];
-  function upd(k,v){sf(function(prev){var o=Object.assign({},prev);o[k]=v;return o})}
+  var _err=useState('');var err=_err[0],setErr=_err[1];
+  function upd(k,v){sf(function(prev){var o=Object.assign({},prev);o[k]=v;return o});setErr('');}
   var lbs=calcLbs(f.units||0,f.weightPerUnit,f.weightUnit);
+  var canSave=!!f.number.trim();
+  function guardar(){
+    if(!f.number.trim()){setErr('El número de coche es obligatorio');return;}
+    p.onSave(Object.assign({},f,{id:f.id||gid(),units:+f.units,weightPerUnit:+f.weightPerUnit,totalLbs:lbs,lbs:lbs,productLoadTime:+f.units>0?(f.productLoadTime||Date.now()):null}));
+    p.onClose();
+  }
   return h(Modal,{title:ini?'Editar Coche #'+ini.number:'Nuevo Coche',onClose:p.onClose,width:480},
-    h(Inp,{label:'Numero de coche',value:f.number,onChange:function(v){upd('number',v)},placeholder:'Ej: 009'}),
+    h(Inp,{label:'Numero de coche *',value:f.number,onChange:function(v){upd('number',v)},placeholder:'Ej: 009'}),
+    err&&h('div',{style:{background:C.d+'15',border:'1px solid '+C.d+'50',borderRadius:6,padding:'6px 10px',marginTop:-6,marginBottom:8,fontSize:11,color:C.d}},'⚠ '+err),
     h('div',{style:{marginBottom:10}},h('div',{style:{fontSize:9,color:C.m,marginBottom:5,textTransform:'uppercase'}},'Producto'),h('div',{style:{display:'flex',flexWrap:'wrap',gap:4,marginBottom:6}},PRODS.map(function(pr){return h('button',{key:pr.name,onClick:function(){sf(function(prev){return Object.assign({},prev,{productName:pr.name,unitType:pr.unitType,weightPerUnit:pr.weightPerUnit,weightUnit:pr.weightUnit})})},style:{padding:'4px 10px',borderRadius:12,border:'1px solid '+(f.productName===pr.name?C.ac:C.b),background:f.productName===pr.name?C.ac+'18':C.s3,color:f.productName===pr.name?C.ac:C.t2,cursor:'pointer',fontSize:10}},pr.name)}))),
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 80px',gap:8,marginBottom:12}},
       h('div',null,h('div',{style:{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase'}},'Cantidad'),h('input',{type:'number',value:f.units,onChange:function(e){upd('units',e.target.value)},style:{width:'100%',background:C.s3,border:'1px solid '+C.b,borderRadius:6,padding:'8px 10px',color:C.t,fontSize:14}})),
@@ -421,7 +429,11 @@ function MCocheForm(p){
       h('div',null,h('div',{style:{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase'}},'Unidad'),h('div',{style:{display:'flex',flexDirection:'column',gap:4}},['lbs','kg'].map(function(u){return h('button',{key:u,onClick:function(){upd('weightUnit',u)},style:{padding:'5px',borderRadius:5,border:'1px solid '+(f.weightUnit===u?C.w:C.b),background:f.weightUnit===u?C.w+'20':C.s3,color:f.weightUnit===u?C.w:C.t2,cursor:'pointer',fontSize:11,fontWeight:600}},u)})))
     ),
     +f.units>0&&h('div',{style:{background:C.g+'12',border:'1px solid '+C.g+'30',borderRadius:8,padding:10,marginBottom:12,textAlign:'center'}},h('div',{style:{fontSize:9,color:C.m}},'TOTAL LIBRAS'),h('div',{style:{fontFamily:'monospace',fontSize:22,color:C.g,fontWeight:700}},lbs.toLocaleString()+' lbs')),
-    h('div',{style:{display:'flex',gap:8,justifyContent:'flex-end'}},h(Btn,{onClick:p.onClose,color:C.m},'Cancelar'),h(Btn,{onClick:function(){if(!f.number.trim())return;p.onSave(Object.assign({},f,{id:f.id||gid(),units:+f.units,weightPerUnit:+f.weightPerUnit,totalLbs:lbs,lbs:lbs,productLoadTime:+f.units>0?(f.productLoadTime||Date.now()):null}))},color:C.g},'Guardar'))
+    h('div',{style:{display:'flex',gap:8,justifyContent:'flex-end',alignItems:'center'}},
+      !canSave&&h('span',{style:{fontSize:10,color:C.m,flex:1}},'* Completa el número de coche'),
+      h(Btn,{onClick:p.onClose,color:C.m},'Cancelar'),
+      h(Btn,{onClick:guardar,disabled:!canSave,color:C.g},'Guardar')
+    )
   );
 }
 
@@ -466,6 +478,7 @@ function MVerif(p){
 function VDashboard(p){
   var coches=p.coches,tunnels=p.tunnels,tLogs=p.tLogs;
   var drag=p.drag,setDrag=p.setDrag,dO=p.dO,setDO=p.setDO;
+  var _confLib=useState(null);var confLib=_confLib[0],setConfLib=_confLib[1]; // tunnel id pendiente de confirmar liberacion
   var unacked=p.alarms.filter(function(a){return !a.ack});
   function dropT(e,tid){e.preventDefault();if(!drag)return;var t=tunnels.find(function(x){return x.id===tid});if(!t)return;var occ=coches.filter(function(c){return c.tunnelId===tid&&c.status==='en-tunel'}).length;if(occ>=t.capacityCoches){alert('Tunel lleno');setDrag(null);setDO(null);return}var nc=coches.map(function(c){return c.id===drag.id?Object.assign({},c,{status:'en-tunel',tunnelId:tid,tunnelName:t.name,entryTime:Date.now()}):c});p.setCoches(nc);p.sync(nc,null);setDrag(null);setDO(null)}
   function assignTunel(cid,tid,tname){var nc=coches.map(function(c){return c.id===cid?Object.assign({},c,{status:'en-tunel',tunnelId:tid,tunnelName:tname,entryTime:Date.now()}):c});p.setCoches(nc);p.sync(nc,null)}
@@ -507,7 +520,14 @@ function VDashboard(p){
               h('span',{style:{fontSize:10,fontFamily:'monospace',color:full?C.d:t.color}},inT.length+'/'+t.capacityCoches),
               h(Btn,{sm:true,color:C.ac,onClick:function(){p.setVerif(Object.assign({},t,{_occ:inT.length}))}},'Verificar'),
               !full&&coches.some(function(c){return c.status==='libre'&&(c.units||0)>0})&&h(Btn,{sm:true,color:C.w,onClick:function(){p.setBatch(Object.assign({},t,{_occ:inT.length}))}},'Batch'),
-              inT.length>0&&h(Btn,{sm:true,color:C.g,onClick:function(){if(confirm('Liberar todos los coches de '+t.name+'?'))p.onRelease(t.id,false)}},'Liberar')
+              inT.length>0&&confLib!==t.id&&h(Btn,{sm:true,color:C.g,onClick:function(){setConfLib(t.id)}},'Liberar'),
+              inT.length>0&&confLib===t.id&&h('div',{style:{display:'flex',gap:4,alignItems:'center'}},
+                h('span',{style:{fontSize:9,color:C.w}},'\u00bfLiberar '+t.name+'?'),
+                h('button',{onClick:function(){setConfLib(null);p.onRelease(t.id,false)},
+                  style:{background:C.g+'25',border:'1px solid '+C.g,color:C.g,borderRadius:5,padding:'3px 10px',cursor:'pointer',fontSize:10,fontWeight:700}},'Si'),
+                h('button',{onClick:function(){setConfLib(null)},
+                  style:{background:'none',border:'1px solid '+C.m,color:C.m,borderRadius:5,padding:'3px 8px',cursor:'pointer',fontSize:10}},'No')
+              )
             )
           ),
           h('div',{style:{background:C.s3,borderRadius:2,height:3,marginBottom:8}},h('div',{style:{background:t.color,borderRadius:2,height:'100%',width:pct(inT.length,t.capacityCoches)+'%',opacity:.7}})),
@@ -1046,6 +1066,27 @@ function VHistorial(p){
     var tunel=p.tunnels.find(function(t){return t.id===hh.tunnelId});
     var aDesp=tunel&&parseFloat(hrs)>tunel.targetTimeHours*1.1;
     var anticip=hh.earlyRelease;
+    var turno=SHIFTS.find(function(s){return s.id===hh.shift});
+    function shareHistWA(){
+      var hMin=Math.round(parseFloat(hrs)*60),hh2=Math.floor(hMin/60),mm2=hMin%60;
+      var lines=['*FREEZE CONTROL — LIBERACION DE TUNEL*'];
+      lines.push('_'+fmt(hh.exitTime)+'_');
+      lines.push('Turno: *'+(turno?turno.l:'?')+'* | Operador: *'+(hh.userName||'—')+'*');
+      lines.push('');
+      lines.push('Tunel: *'+(hh.tunnelName||'—')+'*');
+      lines.push(anticip?'Estado: ⚡ LIBERACION ANTICIPADA':aDesp?'Estado: ⚠ Con retraso':'Estado: ✅ Normal');
+      lines.push('');
+      lines.push('--- Coche #'+hh.number+' ---');
+      lines.push('Producto: *'+(hh.productName||'—')+'*');
+      if(hh.lote)lines.push('Lote: '+hh.lote);
+      lines.push('Cantidad: '+(hh.units||0)+' '+(hh.unitType==='funda'?'fundas':'cajas')+' x '+(hh.weightPerUnit||0)+' '+(hh.weightUnit||'lbs')+' = *'+(hh.totalLbs||0).toLocaleString()+' lbs*');
+      lines.push('Tiempo en tunel: *'+hh2+'h '+mm2+'min*'+(tunel?' (obj: '+tunel.targetTimeHours+'h)':''));
+      lines.push('Tiempo afuera antes de entrar: '+(hh.outsideMin||0)+'min');
+      lines.push('Entrada: '+fmt(hh.entryTime)+' | Salida: '+fmt(hh.exitTime));
+      // Ultimas temps del tunel
+      if(p.tLogs){var tl=p.tLogs.filter(function(l){return l.tunnelId===hh.tunnelId&&l.timestamp>=hh.entryTime&&l.timestamp<=hh.exitTime}).sort(function(a,b){return b.timestamp-a.timestamp})[0];if(tl){if(tl.airTemp!=null)lines.push('Temp aire: *'+tl.airTemp+'C*');if(tl.prodTemp!=null)lines.push('Temp producto: *'+tl.prodTemp+'C*');}}
+      window.open('https://wa.me/?text='+encodeURIComponent(lines.join('\n')),'_blank');
+    }
     return h('div',{key:hh.id,className:'fade',style:{background:C.s1,border:'1px solid '+(aDesp?C.w+'40':anticip?C.ac+'40':C.b),borderRadius:8,padding:'10px 14px',display:'grid',gridTemplateColumns:'auto 1fr auto',gap:12,alignItems:'center'}},
       h('div',{style:{fontFamily:'monospace',fontSize:15,fontWeight:700,color:C.t}},'#'+hh.number),
       h('div',null,
@@ -1062,9 +1103,14 @@ function VHistorial(p){
         ),
         h('div',{style:{fontSize:9,color:C.m}},'Entrada: '+fmtT(hh.entryTime)+' → Salida: '+fmtT(hh.exitTime)+(hh.userName?' · '+hh.userName:''))
       ),
-      h('div',{style:{textAlign:'right'}},
+      h('div',{style:{textAlign:'right',display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}},
         h('div',{style:{fontFamily:'monospace',fontSize:12,color:aDesp?C.w:C.g,marginBottom:2}},hrs+'h tunel'),
-        sh&&h(Tag,{color:sh.c},sh.l)
+        sh&&h(Tag,{color:sh.c},sh.l),
+        h('button',{onClick:shareHistWA,title:'Compartir por WhatsApp',
+          style:{marginTop:4,background:'#25D36620',border:'1px solid #25D36660',color:'#25D366',borderRadius:6,padding:'3px 8px',cursor:'pointer',fontSize:10,fontWeight:700,display:'flex',alignItems:'center',gap:4,whiteSpace:'nowrap'}},
+          h('svg',{viewBox:'0 0 24 24',width:12,height:12,fill:'#25D366'},h('path',{d:'M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z'})),
+          'WA'
+        )
       )
     );
   }
@@ -1339,6 +1385,7 @@ function VConfig(p){
 
 function VGestion(p){
   var _tab=useState('coches');var tab=_tab[0],setTab=_tab[1];
+  var _delConf=useState(null);var delConf=_delConf[0],setDelConf=_delConf[1]; // id del coche/tunel pendiente de confirmar eliminacion
   var tabs=[['coches','Coches'],['tuneles','Tuneles']];
   if(p.isAdmin)tabs.push(['config','Config']);
   return h('div',{style:{padding:14}},
@@ -1353,7 +1400,16 @@ function VGestion(p){
             h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}},h('span',{style:{fontFamily:'monospace',fontWeight:700,fontSize:14,color:C.t}},'#'+c.number),h(Tag,{color:c.status==='en-tunel'?C.w:c.status==='masterizando'?'#aa88ff':C.t2},c.status)),
             [['Producto',c.productName||'—'],['Tipo',c.unitType==='funda'?'Fundas':'Cajas'],['Cantidad',String(c.units||0)],['Peso/und',(c.weightPerUnit||0)+' '+(c.weightUnit||'lbs')],['Total Lbs',(c.totalLbs||0).toLocaleString()+' lbs'],['Tunel',(t&&t.name)||'—'],['Ciclos',String(c.ciclos||0)]].map(function(row){return h('div',{key:row[0],style:{display:'flex',justifyContent:'space-between',fontSize:11,padding:'2px 0',borderBottom:'1px solid '+C.b+'25'}},h('span',{style:{color:C.m}},row[0]),h('span',{style:{color:row[0]==='Total Lbs'?C.g:C.t,fontWeight:row[0]==='Total Lbs'?700:400}},row[1]))}),
             c.status==='en-tunel'&&h('div',{style:{marginTop:6}},h('div',{style:{display:'flex',justifyContent:'space-between',fontSize:9,marginBottom:2}},h('span',{style:{color:C.m}},'EN TUNEL'),h('span',{style:{color:tcol(el,t&&t.targetTimeHours),fontFamily:'monospace'}},elp(el))),h('div',{style:{background:C.s3,borderRadius:2,height:3}},h('div',{style:{background:tcol(el,t&&t.targetTimeHours),borderRadius:2,height:'100%',width:pct(el,(t?t.targetTimeHours:1)*3600000)+'%'}}))),
-            h('div',{style:{display:'flex',gap:5,marginTop:8}},h(Btn,{sm:true,color:C.ac,onClick:function(){p.openForm(c)}},'Editar'),h(Btn,{sm:true,color:C.d,onClick:function(){if(!confirm('Eliminar coche #'+c.number+'?'))return;var nc=p.coches.filter(function(x){return x.id!==c.id});p.setCoches(nc);p.sync(nc,null);if(p.cfg.scriptUrl)fetch(p.cfg.scriptUrl,{method:'POST',body:JSON.stringify({action:'deleteCoche',cocheId:c.id}),headers:{'Content-Type':'text/plain'}}).catch(function(){})}},'Eliminar'))
+            h('div',{style:{display:'flex',gap:5,marginTop:8,flexWrap:'wrap'}},
+              h(Btn,{sm:true,color:C.ac,onClick:function(){setDelConf(null);p.openForm(c)}},'Editar'),
+              delConf===c.id
+                ? h('div',{style:{display:'flex',gap:4,alignItems:'center'}},
+                    h('span',{style:{fontSize:9,color:C.d}},'Eliminar?'),
+                    h('button',{onClick:function(){setDelConf(null);var nc=p.coches.filter(function(x){return x.id!==c.id});p.setCoches(nc);p.sync(nc,null);if(p.cfg.scriptUrl)fetch(p.cfg.scriptUrl,{method:'POST',body:JSON.stringify({action:'deleteCoche',cocheId:c.id}),headers:{'Content-Type':'text/plain'}}).catch(function(){})},style:{background:C.d+'20',border:'1px solid '+C.d,color:C.d,borderRadius:5,padding:'2px 8px',cursor:'pointer',fontSize:10,fontWeight:700}},'Si'),
+                    h('button',{onClick:function(){setDelConf(null)},style:{background:'none',border:'1px solid '+C.m,color:C.m,borderRadius:5,padding:'2px 6px',cursor:'pointer',fontSize:10}},'No')
+                  )
+                : h(Btn,{sm:true,color:C.d,onClick:function(){setDelConf(c.id)}},'Eliminar')
+            )
           );
         })
       )
@@ -1372,14 +1428,17 @@ function VGestion(p){
             ),
             [['Temp objetivo',t.targetTemp+'°C'],['Tiempo objetivo',t.targetTimeHours+'h'],['Capacidad',inT.length+'/'+t.capacityCoches+' coches'],['Lbs en tunel',lbs.toLocaleString()+' lbs'],['Revision temp','Cada '+t.checkIntervalMin+'min']].map(function(row){return h('div',{key:row[0],style:{display:'flex',justifyContent:'space-between',fontSize:11,padding:'3px 0',borderBottom:'1px solid '+C.b+'25'}},h('span',{style:{color:C.m}},row[0]),h('span',{style:{color:C.t}},row[1]))}),
             h('div',{style:{background:C.s3,borderRadius:2,height:4,marginTop:8,marginBottom:p.isAdmin?10:0}},h('div',{style:{background:t.color,borderRadius:2,height:'100%',width:pct(inT.length,t.capacityCoches)+'%',opacity:.8}})),
-            p.isAdmin&&h('div',{style:{display:'flex',gap:5}},
-              h(Btn,{sm:true,color:C.ac,onClick:function(){p.openTunnelForm(t)}},'✏ Editar'),
-              h(Btn,{sm:true,color:C.d,onClick:function(){
-                if(inT.length>0){alert('No puedes eliminar un tunel con coches adentro. Libera los coches primero.');return}
-                if(!confirm('¿Eliminar tunel '+t.name+'? Esta accion no se puede deshacer.'))return;
-                var nt=p.tunnels.filter(function(x){return x.id!==t.id});
-                p.setTunnels(nt);p.sync(null,nt);
-              }},'✕ Eliminar')
+            p.isAdmin&&h('div',{style:{display:'flex',gap:5,flexWrap:'wrap',alignItems:'center'}},
+              h(Btn,{sm:true,color:C.ac,onClick:function(){setDelConf(null);p.openTunnelForm(t)}},'✏ Editar'),
+              inT.length>0
+                ? h('span',{style:{fontSize:9,color:C.m}},'Libera los coches primero')
+                : delConf===('t_'+t.id)
+                  ? h('div',{style:{display:'flex',gap:4,alignItems:'center'}},
+                      h('span',{style:{fontSize:9,color:C.d}},'Eliminar '+t.name+'?'),
+                      h('button',{onClick:function(){setDelConf(null);var nt=p.tunnels.filter(function(x){return x.id!==t.id});p.setTunnels(nt);p.sync(null,nt)},style:{background:C.d+'20',border:'1px solid '+C.d,color:C.d,borderRadius:5,padding:'2px 8px',cursor:'pointer',fontSize:10,fontWeight:700}},'Si'),
+                      h('button',{onClick:function(){setDelConf(null)},style:{background:'none',border:'1px solid '+C.m,color:C.m,borderRadius:5,padding:'2px 6px',cursor:'pointer',fontSize:10}},'No')
+                    )
+                  : h(Btn,{sm:true,color:C.d,onClick:function(){setDelConf('t_'+t.id)}},'✕ Eliminar')
             )
           );
         })
@@ -1683,41 +1742,42 @@ function App(){
     });
     var nc=coches.map(function(c){return c.tunnelId===tid&&c.status==='en-tunel'?Object.assign({},c,{status:'masterizando',tunnelId:null,exitTime:n,masterTime:n}):c});
     coR.current=nc;setCoches(nc);autoSync(nc,null);
-    // Ack cualquier alarma de product-ready para este tunel
-    var tAlarms=alR.current.filter(function(a){return !a.ack&&a.type==='product-ready'&&inT.some(function(c){return a.msg&&a.msg.indexOf('#'+inT[0].number)>-1||a.cocheId===inT[0].id})});
-    tAlarms.forEach(function(a){ackAlarm(a.id)});
+    // Ack alarmas product-ready del tunel liberado (simplificado)
+    alR.current.filter(function(a){return !a.ack&&a.type==='product-ready'}).forEach(function(a){
+      if(inT.some(function(c){return a.msg&&a.msg.indexOf('#'+c.number)>-1}))ackAlarm(a.id);
+    });
     // Generar informe WhatsApp
     if(entries.length>0&&t){
-      var tLast=tLogs.filter(function(l){return l.tunnelId===tid}).sort(function(a,b){return b.timestamp-a.timestamp});
-      var turno=SHIFTS.find(function(s){return s.id===shiftOf(n)});
-      var totalLbs=entries.reduce(function(s,e){return s+(e.entry.totalLbs||0)},0);
-      var lines=['*FREEZE CONTROL — LIBERACION DE TUNEL*'];
-      lines.push('_'+new Date(n).toLocaleString('es-EC',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})+'_');
-      lines.push('Turno: *'+(turno?turno.l:'?')+'* | Operador: *'+(user&&user.name||'—')+'*');
-      lines.push('');
-      lines.push('Tunel: *'+(t.name)+'* ('+(t.type==='amoniaco'?'Amoniaco':'Freon')+')');
-      lines.push('Objetivo: '+t.targetTemp+'C / '+t.targetTimeHours+'h');
-      lines.push(early?'Estado: ⚡ LIBERACION ANTICIPADA':'Estado: ✅ Liberacion normal');
-      lines.push('');
-      entries.forEach(function(e){
-        var c=e.coche,en=e.entry;
-        var hMin=Math.floor(+en.horasEnTunel*60),hh=Math.floor(hMin/60),mm=hMin%60;
-        lines.push('--- Coche #'+c.number+' ---');
-        lines.push('Producto: *'+c.productName+'*');
-        if(c.lote)lines.push('Lote: '+c.lote);
-        lines.push('Cantidad: '+c.units+' '+(c.unitType==='funda'?'fundas':'cajas')+' x '+c.weightPerUnit+' '+c.weightUnit+' = *'+c.totalLbs.toLocaleString()+' lbs*');
-        lines.push('Tiempo en tunel: *'+hh+'h '+mm+'min* (obj: '+t.targetTimeHours+'h)');
-        // Ultima temperatura registrada del tunel
-        var lastT=tLast[0];
-        if(lastT){
-          if(lastT.airTemp!=null)lines.push('Temp aire: *'+lastT.airTemp+'C* (obj '+t.targetTemp+'C '+(Math.abs(lastT.airTemp-t.targetTemp)<=2?'OK':'Desv '+(Math.abs(lastT.airTemp-t.targetTemp).toFixed(1))+'C')+')');
-          if(lastT.prodTemp!=null)lines.push('Temp producto: *'+lastT.prodTemp+'C* '+(lastT.prodTemp<=t.targetTemp+1?'LISTO':'en proceso'));
-        }
+      try{
+        var tLast=tLogs.filter(function(l){return l.tunnelId===tid}).sort(function(a,b){return b.timestamp-a.timestamp});
+        var turno=SHIFTS.find(function(s){return s.id===shiftOf(n)});
+        var totalLbs=entries.reduce(function(s,e){return s+(e.entry.totalLbs||0)},0);
+        var lines=['*FREEZE CONTROL \u2014 LIBERACION DE TUNEL*'];
+        lines.push('_'+new Date(n).toLocaleString('es-EC',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})+'_');
+        lines.push('Turno: *'+(turno?turno.l:'?')+'* | Operador: *'+(user&&user.name||'\u2014')+'*');
         lines.push('');
-      });
-      lines.push('TOTAL: *'+entries.length+' coches | '+totalLbs.toLocaleString()+' lbs*');
-      lines.push('Registros de temp: '+tLast.filter(function(l){return Date.now()-l.timestamp<t.targetTimeHours*3600000*1.2}).length+' durante el ciclo');
-      setShareWA({text:lines.join('\n'),tunnel:t.name,lbs:totalLbs,coches:entries.length});
+        lines.push('Tunel: *'+t.name+'* ('+(t.type==='amoniaco'?'Amoniaco':'Freon')+')');
+        lines.push('Objetivo: '+t.targetTemp+'C / '+t.targetTimeHours+'h');
+        lines.push(early?'Estado: Liberacion ANTICIPADA':'Estado: Liberacion normal');
+        lines.push('');
+        entries.forEach(function(e){
+          var c=e.coche,en=e.entry;
+          var hMin=Math.floor(+en.horasEnTunel*60),hh=Math.floor(hMin/60),mm=hMin%60;
+          lines.push('--- Coche #'+c.number+' ---');
+          lines.push('Producto: *'+(c.productName||'-')+'*');
+          if(c.lote)lines.push('Lote: '+c.lote);
+          lines.push('Cantidad: '+(c.units||0)+' '+(c.unitType==='funda'?'fundas':'cajas')+' x '+(c.weightPerUnit||0)+' '+(c.weightUnit||'lbs')+' = *'+(c.totalLbs||0).toLocaleString()+' lbs*');
+          lines.push('Tiempo en tunel: *'+hh+'h '+mm+'min* (obj: '+t.targetTimeHours+'h)');
+          var lastT=tLast[0];
+          if(lastT){
+            if(lastT.airTemp!=null)lines.push('Temp aire: *'+lastT.airTemp+'C* (obj '+t.targetTemp+'C '+(Math.abs(lastT.airTemp-t.targetTemp)<=2?'OK':'Desv '+Math.abs(lastT.airTemp-t.targetTemp).toFixed(1)+'C')+')');
+            if(lastT.prodTemp!=null)lines.push('Temp producto: *'+lastT.prodTemp+'C* '+(lastT.prodTemp<=t.targetTemp+1?'LISTO':'en proceso'));
+          }
+          lines.push('');
+        });
+        lines.push('TOTAL: *'+entries.length+' coche'+(entries.length>1?'s':'')+' | '+totalLbs.toLocaleString()+' lbs*');
+        setShareWA({text:lines.join('\n'),tunnel:t.name,lbs:totalLbs,coches:entries.length});
+      }catch(err){console.error('WA report error:',err);}
     }
   }
   function onBatch(tid,ids,et){var nc=coches.map(function(c){return ids.indexOf(c.id)>-1?Object.assign({},c,{status:'en-tunel',tunnelId:tid,entryTime:et}):c});coR.current=nc;setCoches(nc);autoSync(nc,null)}
