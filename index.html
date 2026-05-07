@@ -83,7 +83,13 @@ var THEME_KEY='fc_theme_v1';
 function getThemeId(){try{return localStorage.getItem(THEME_KEY)||'ocean'}catch(e){return'ocean'}}
 function setThemeId(id){try{localStorage.setItem(THEME_KEY,id)}catch(e){}}
 
-// ── COLORES (aplicar tema al cargar) ────────────────────
+// ── MAPEAR USUARIOS DESDE SHEETS (ID|Nombre|Email|Pass|Rol|Cargo|Google|Tel|Fecha)
+function mapU(rows){
+  return rows.map(function(r){
+    return {id:String(r[0]||''),name:String(r[1]||''),email:String(r[2]||'').toLowerCase().trim(),
+            password:String(r[3]||''),role:String(r[4]||'operador'),cargo:String(r[5]||'')};
+  }).filter(function(u){return u.email&&u.password;});
+}
 var C=(function(){var th=THEMES_DEF[getThemeId()]||THEMES_DEF.ocean;return{s1:th.s1,s2:th.s2,s3:th.s3,b:th.b,ac:th.ac,g:th.g,w:th.w,d:th.d,t:th.t,m:th.m,t2:th.t2}})();
 
 // ── CONFIG DE ALARMAS ────────────────────────────────────
@@ -1121,58 +1127,55 @@ function VIA(p){
   var aiEnd=useRef(null);
   useEffect(function(){if(aiEnd.current)aiEnd.current.scrollIntoView({behavior:'smooth'})},[p.msgs]);
   var quick=[
-    '📊 Dame un resumen completo del turno actual',
-    '🌡 Analiza las temperaturas y alertas de hoy',
-    '⏱ Que tuneles estan saliendo a tiempo?',
-    '⚖ Cuantas libras hay en proceso ahora?',
-    '🔔 Hay alarmas criticas pendientes?',
-    '📈 Cual es el rendimiento del historial por tunel?',
-    '🚨 Que coche lleva mas tiempo afuera del limite?',
-    '💡 Que recomendaciones tienes para este turno?'
+    {v:'Dame un resumen completo del turno actual',           l:'📊 Resumen del turno'},
+    {v:'Analiza las temperaturas y alertas de hoy',           l:'🌡 Temperaturas y alertas'},
+    {v:'Que tuneles estan saliendo a tiempo?',                l:'⏱ Túneles en tiempo'},
+    {v:'Cuantas libras hay en proceso ahora?',               l:'⚖ Libras en proceso'},
+    {v:'Hay alarmas criticas pendientes?',                    l:'🔔 Alarmas pendientes'},
+    {v:'Cual es el rendimiento del historial por tunel?',     l:'📈 Rendimiento historial'},
+    {v:'Que coche lleva mas tiempo afuera del limite?',       l:'⏳ Coche más tiempo afuera'},
+    {v:'Que recomendaciones tienes para este turno?',         l:'💡 Recomendaciones'}
   ];
+  function send(){if(ai.trim()){p.send(ai);setAi('')}}
   return h('div',{style:{display:'flex',flexDirection:'column',height:'calc(100vh - 90px)'}},
-    // Info banner
-    h('div',{style:{background:C.s1,borderBottom:'1px solid '+C.b,padding:'8px 14px',flexShrink:0}},
-      h('div',{style:{display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}},
-        h('div',{style:{fontSize:11,color:C.ac,fontWeight:700}},'🤖 Asistente IA — Freeze Control'),
-        h('div',{style:{fontSize:10,color:C.m}},'Analiza tuneles, temperaturas, alarmas e historico en tiempo real'),
-        h('div',{style:{marginLeft:'auto',display:'flex',flexWrap:'wrap',gap:4}},
-          quick.slice(0,4).map(function(q){return h('button',{key:q,onClick:function(){setAi(q)},
-            style:{background:C.s3,border:'1px solid '+C.b,color:C.t2,padding:'3px 8px',borderRadius:12,cursor:'pointer',fontSize:9}},q)})
-        )
+    // Header compacto (1 línea)
+    h('div',{style:{background:C.s2,borderBottom:'1px solid '+C.b,padding:'6px 12px',flexShrink:0,display:'flex',alignItems:'center',gap:10}},
+      h('span',{style:{fontSize:16}},'🤖'),
+      h('span',{style:{fontWeight:700,fontSize:12,color:C.ac}},'Freeze Control IA'),
+      h('span',{style:{fontSize:9,color:C.m}},'\u2022 Sin API \u2022 Sin internet \u2022 Tiempo real'),
+      // Dropdown selector de consultas rápidas
+      h('select',{
+        onChange:function(e){if(e.target.value){setAi(e.target.value);e.target.selectedIndex=0;}},
+        style:{marginLeft:'auto',background:C.s3,border:'1px solid '+C.b,color:C.t,borderRadius:6,padding:'4px 8px',fontSize:10,cursor:'pointer',maxWidth:200}},
+        h('option',{value:''},'▾ Consulta rápida...'),
+        quick.map(function(q){return h('option',{key:q.v,value:q.v},q.l)})
       )
     ),
     // Mensajes
-    h('div',{style:{flex:1,overflowY:'auto',padding:14,display:'flex',flexDirection:'column',gap:8}},
+    h('div',{style:{flex:1,overflowY:'auto',padding:'10px 14px',display:'flex',flexDirection:'column',gap:8}},
       p.msgs.map(function(m,i){
         var isUser=m.role==='user';
-        return h('div',{key:i,style:{display:'flex',justifyContent:isUser?'flex-end':'flex-start',gap:8,alignItems:'flex-start'}},
-          !isUser&&h('div',{style:{width:28,height:28,borderRadius:'50%',background:C.ac+'20',border:'1px solid '+C.ac+'40',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,flexShrink:0,marginTop:4}},'🤖'),
-          h('div',{style:{background:isUser?C.ac+'18':C.s1,border:'1px solid '+(isUser?C.ac:C.b),borderRadius:10,padding:'8px 12px',maxWidth:'80%',fontSize:12,color:C.t,lineHeight:1.6,whiteSpace:'pre-wrap'}},m.content)
+        return h('div',{key:i,style:{display:'flex',justifyContent:isUser?'flex-end':'flex-start',gap:6,alignItems:'flex-start'}},
+          !isUser&&h('div',{style:{width:26,height:26,borderRadius:'50%',background:C.ac+'20',border:'1px solid '+C.ac+'40',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,flexShrink:0,marginTop:2}},'🤖'),
+          h('div',{style:{background:isUser?C.ac+'18':C.s1,border:'1px solid '+(isUser?C.ac:C.b),borderRadius:10,padding:'7px 11px',maxWidth:'82%',fontSize:11,color:C.t,lineHeight:1.6,whiteSpace:'pre-wrap'}},m.content)
         );
       }),
-      p.loading&&h('div',{style:{display:'flex',justifyContent:'flex-start',gap:8,alignItems:'center'}},
-        h('div',{style:{width:28,height:28,borderRadius:'50%',background:C.ac+'20',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14}},'🤖'),
-        h('div',{style:{background:C.s1,border:'1px solid '+C.b,borderRadius:10,padding:'10px 14px',color:C.ac,display:'flex',gap:6,alignItems:'center'}},
-          h('div',{style:{fontFamily:'monospace',fontSize:13,animation:'spin 1s linear infinite'}},'⟳'),
-          h('div',{style:{fontSize:12}},'Analizando datos en tiempo real...')
+      p.loading&&h('div',{style:{display:'flex',gap:6,alignItems:'center'}},
+        h('div',{style:{width:26,height:26,borderRadius:'50%',background:C.ac+'20',display:'flex',alignItems:'center',justifyContent:'center'}},'🤖'),
+        h('div',{style:{background:C.s1,border:'1px solid '+C.b,borderRadius:10,padding:'8px 12px',color:C.ac,display:'flex',gap:6,alignItems:'center'}},
+          h('div',{style:{fontFamily:'monospace',animation:'spin 1s linear infinite'}},'⟳'),
+          h('span',{style:{fontSize:11}},'Analizando...')
         )
       ),
       h('div',{ref:aiEnd})
     ),
-    // Input
-    h('div',{style:{padding:'8px 14px',borderTop:'1px solid '+C.b,background:C.s1,flexShrink:0}},
-      h('div',{style:{display:'flex',flexWrap:'wrap',gap:4,marginBottom:8}},
-        quick.map(function(q){return h('button',{key:q,onClick:function(){setAi(q)},
-          style:{background:C.s3,border:'1px solid '+C.b,color:C.t2,padding:'3px 8px',borderRadius:12,cursor:'pointer',fontSize:10}},q)})
-      ),
-      h('div',{style:{display:'flex',gap:8}},
-        h('input',{value:ai,onChange:function(e){setAi(e.target.value)},
-          onKeyDown:function(e){if(e.key==='Enter'&&ai.trim()){p.send(ai);setAi('')}},
-          placeholder:'Ej: "Como estan los tuneles?" o "Dame indicadores del turno"',
-          style:{flex:1,background:C.s3,border:'1px solid '+C.b,borderRadius:8,padding:'10px 12px',color:C.t,fontSize:12}}),
-        h(Btn,{onClick:function(){if(ai.trim()){p.send(ai);setAi('')}},disabled:!ai.trim()||p.loading,color:C.ac},'Enviar')
-      )
+    // Input (sin botones extra, todo en una línea)
+    h('div',{style:{padding:'8px 12px',borderTop:'1px solid '+C.b,background:C.s1,flexShrink:0,display:'flex',gap:8}},
+      h('input',{value:ai,onChange:function(e){setAi(e.target.value)},
+        onKeyDown:function(e){if(e.key==='Enter')send()},
+        placeholder:'Escribe tu pregunta...',
+        style:{flex:1,background:C.s3,border:'1px solid '+C.b,borderRadius:8,padding:'9px 12px',color:C.t,fontSize:12}}),
+      h(Btn,{onClick:send,disabled:!ai.trim()||p.loading,color:C.ac},'Enviar')
     )
   );
 }
@@ -1573,13 +1576,14 @@ function App(){
   var _sb=useState(null);var showBatch=_sb[0],setShowBatch=_sb[1];
   var _sv=useState(null);var showVerif=_sv[0],setShowVerif=_sv[1];
   var _srt=useState(false);var showResumen=_srt[0],setShowResumen=_srt[1];
-  var _ai=useState([{role:'assistant',content:'🤖 FREEZE CONTROL IA — Modo Local Activo\n\n✅ Sin API key · Sin internet · Análisis instantáneo\n\nTengo acceso en tiempo real a todos los datos de la planta:\n\n📊 Estado de túneles y coches\n🌡 Registros de temperatura (aire y producto)\n🔔 Alarmas activas y pendientes\n⚖ Libras en proceso e historial\n⏱ Tiempos y puntualidad de liberación\n\nPrueba preguntarme cosas como:\n• "Dame un resumen del turno"\n• "¿Qué túneles van retrasados?"\n• "¿Hay alarmas críticas?"\n• "¿Cuántas libras hay en proceso?"\n• "¿Qué coche lleva más tiempo afuera?"\n• "Dame recomendaciones"\n• "¿Cómo están las temperaturas?"\n• "Rendimiento del historial"\n\n¿En qué te ayudo?'}]);var aiMsgs=_ai[0],setAiMsgs=_ai[1];
+  var _ai=useState([{role:'assistant',content:'⚡ FREEZE CONTROL IA lista.\nUsa el menu o escribe tu pregunta.'}]);var aiMsgs=_ai[0],setAiMsgs=_ai[1];
   var _al2=useState(false);var aiLoad=_al2[0],setAiLoad=_al2[1];
   var _pwa=useState(false);var pwaOk=_pwa[0],setPwaOk=_pwa[1];
   var _pwaI=useState(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches);var pwaInst=_pwaI[0],setPwaInst=_pwaI[1];
   var _notif=useState(typeof Notification!=='undefined'?Notification.permission:'default');var notif=_notif[0],setNotif=_notif[1];
 
   var coR=useRef(coches),tuR=useRef(tunnels),cfR=useRef(config),hiR=useRef(history),tlR=useRef(tLogs),alR=useRef(alarms),stR=useRef(null);
+  var usersRef=useRef(USERS); // se actualiza cuando llegan usuarios de Sheets
   var escRef=useRef({}); // { [alarmId]: {iv, firedAt} } — alarmas escalantes activas
   useEffect(function(){coR.current=coches},[coches]);
   useEffect(function(){tuR.current=tunnels},[tunnels]);
@@ -1666,7 +1670,24 @@ function App(){
   },[]);
 
   // Auto-detect GAS URL
-  useEffect(function(){var url=window.location.href.split('?')[0];if(url.indexOf('script.google.com')>-1&&!cfR.current.scriptUrl)setConfig(function(p){return Object.assign({},p,{scriptUrl:url})});},[]);
+  // ── CARGA AUTOMÁTICA AL ARRANCAR ────────────────────────
+  // Si hay scriptUrl: carga datos frescos de Sheets al iniciar
+  // Esto también pre-carga usuarios de Sheets ANTES del login
+  // para que credenciales editadas en Sheets funcionen de inmediato
+  useEffect(function(){
+    var url=getGUrl();
+    if(url){
+      // Pre-cargar solo usuarios (rápido) para login
+      fetch(url+'?t='+Date.now())
+        .then(function(r){return r.json()})
+        .then(function(d){
+          if(d.usuarios&&d.usuarios.length){var m=mapU(d.usuarios);if(m.length)usersRef.current=m;}
+          // Si ya hay sesión activa, cargar todo
+          if(stR.current===null&&view==='dashboard'){load(url);}
+        })
+        .catch(function(){});
+    }
+  },[]);
 
   // Polling 30s
   useEffect(function(){
@@ -1684,6 +1705,8 @@ function App(){
       if(d.tuneles&&d.tuneles.length)setTunnels(mapT(d.tuneles));
       if(d.historial&&d.historial.length)setHistory(mapH(d.historial));
       if(d.tempRegistros&&d.tempRegistros.length)setTLogs(mapTL(d.tempRegistros));
+      // Actualizar usuarios en memoria (sin causar re-render)
+      if(d.usuarios&&d.usuarios.length){var m=mapU(d.usuarios);if(m.length)usersRef.current=m;}
     }).catch(function(){});
   }
 
@@ -1740,7 +1763,7 @@ function App(){
     },800); // debounce 800ms para agrupar cambios rapidos
   }
 
-  function load(url){if(!url)return;setSyncing(true);setSMsg('Cargando...');fetch(url+'?t='+Date.now()).then(function(r){return r.json()}).then(function(d){if(!d.ok)throw new Error(d.error);if(d.coches&&d.coches.length)setCoches(mapC(d.coches));if(d.tuneles&&d.tuneles.length)setTunnels(mapT(d.tuneles));if(d.historial&&d.historial.length)setHistory(mapH(d.historial));if(d.tempRegistros&&d.tempRegistros.length)setTLogs(mapTL(d.tempRegistros));setSMsg('OK '+new Date().toLocaleTimeString('es-EC'));setSyncing(false)}).catch(function(){setSMsg('Sin conexion');setSyncing(false)})}
+  function load(url){if(!url)return;setSyncing(true);setSMsg('Cargando...');fetch(url+'?t='+Date.now()).then(function(r){return r.json()}).then(function(d){if(!d.ok)throw new Error(d.error);if(d.coches&&d.coches.length)setCoches(mapC(d.coches));if(d.tuneles&&d.tuneles.length)setTunnels(mapT(d.tuneles));if(d.historial&&d.historial.length)setHistory(mapH(d.historial));if(d.tempRegistros&&d.tempRegistros.length)setTLogs(mapTL(d.tempRegistros));if(d.usuarios&&d.usuarios.length){var mapped=mapU(d.usuarios);if(mapped.length)usersRef.current=mapped;}setSMsg('OK '+new Date().toLocaleTimeString('es-EC'));setSyncing(false)}).catch(function(){setSMsg('Sin conexion');setSyncing(false)})}
 
   function mSync(){
     if(!config.scriptUrl)return;
@@ -1754,7 +1777,7 @@ function App(){
     .finally(function(){setSyncing(false)});
   }
 
-  function login(e){e&&e.preventDefault();var u=USERS.find(function(x){return x.email===email&&x.password===pass});if(!u){setErr('Credenciales incorrectas');return}setUser(u);saveSession(u);setView('dashboard');setErr('');if(config.scriptUrl)load(config.scriptUrl)}
+  function login(e){e&&e.preventDefault();var u=usersRef.current.find(function(x){return x.email===email.toLowerCase().trim()&&x.password===pass});if(!u){setErr('Credenciales incorrectas');return}setUser(u);saveSession(u);setView('dashboard');setErr('');if(config.scriptUrl)load(config.scriptUrl)}
 
   // CRUD
   function onReady(id){var c=coches.find(function(x){return x.id===id}),t=tunnels.find(function(x){return x.id===(c&&c.tunnelId)});if(c&&t){var outsMs=c.productLoadTime&&c.entryTime?c.entryTime-c.productLoadTime:0;var entry={id:gid(),number:c.number,productName:c.productName,unitType:c.unitType,units:c.units,weightPerUnit:c.weightPerUnit,weightUnit:c.weightUnit,totalLbs:c.totalLbs||0,tunnelId:t.id,tunnelName:t.name,tunnelType:t.type,productLoadTime:c.productLoadTime,entryTime:c.entryTime,exitTime:Date.now(),outsideMin:Math.round(outsMs/60000),horasEnTunel:((Date.now()-c.entryTime)/3600000).toFixed(2),shift:shiftOf(Date.now()),userName:user&&user.name,lote:c.lote||''};setHistory(function(prev){var nh=[entry].concat(prev);hiR.current=nh;return nh});if(config.scriptUrl)fetch(config.scriptUrl,{method:'POST',body:JSON.stringify(Object.assign({action:'logHistorial'},entry)),headers:{'Content-Type':'text/plain'}}).catch(function(){})}var nc=coches.map(function(x){return x.id===id?Object.assign({},x,{status:'masterizando',tunnelId:null,exitTime:Date.now(),masterTime:Date.now()}):x});coR.current=nc;setCoches(nc);autoSync(nc,null)}
