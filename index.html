@@ -20,7 +20,7 @@ html,body,#root{height:100%;font-family:'Exo 2',sans-serif;background:#06090f;co
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:#0b1525}::-webkit-scrollbar-thumb{background:#1a3557;border-radius:2px}
 input,select,textarea,button{font-family:'Exo 2',sans-serif}
 input:focus,select:focus,textarea:focus{outline:none;border-color:#00c8ff!important}
-button:active{opacity:0.8}
+button:active{opacity:0.8;transform:scale(0.97)}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
@@ -28,6 +28,19 @@ button:active{opacity:0.8}
 .fade{animation:fadeIn .2s ease}
 #splash{position:fixed;inset:0;background:#06090f;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:9999;transition:opacity .4s}
 #splash.hide{opacity:0;pointer-events:none}
+@media(max-width:640px){
+  .side-nav{position:fixed!important;bottom:0;left:0;right:0;width:100%!important;height:56px!important;flex-direction:row!important;justify-content:space-around!important;padding:4px 0!important;border-right:none!important;border-top:1px solid #1a3557!important;z-index:200}
+  .side-nav button span.nav-label{display:none}
+  .main-wrap{padding-bottom:56px!important}
+  .dash-grid{display:flex!important;flex-direction:column!important;gap:8px!important;padding:8px!important}
+  .temp-layout{display:flex!important;flex-direction:column!important;height:auto!important;min-height:calc(100vh - 145px)}
+  .temp-selector{display:flex!important;flex-direction:row!important;overflow-x:auto!important;width:100%!important;border-right:none!important;border-bottom:1px solid #1a3557!important;padding:8px!important;gap:6px!important;max-height:none!important;-webkit-overflow-scrolling:touch}
+  .temp-selector>button{flex-shrink:0!important;width:150px!important}
+  .header-stats{flex-wrap:nowrap!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch}
+  .header-user{display:none!important}
+  input,select,textarea{font-size:16px!important}
+  .modal-inner{width:100%!important;max-width:100%!important;max-height:90vh!important;border-radius:16px 16px 0 0!important;position:fixed!important;bottom:0!important;left:0!important;top:auto!important}
+}
 </style>
 </head>
 <body>
@@ -166,7 +179,7 @@ function Modal({title,children,onClose,width=480}){
   useEffect(()=>{document.body.style.overflow='hidden';return()=>{document.body.style.overflow=''}},[]);
   return html`<div style=${{position:'fixed',inset:0,background:'#000c',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:12}}
     onClick=${e=>e.target===e.currentTarget&&onClose()}>
-    <div style=${{background:C.s1,border:`1px solid ${C.b}`,borderRadius:12,padding:20,width:'100%',maxWidth:width,maxHeight:'92vh',overflowY:'auto'}} class="fade">
+    <div className="modal-inner" style=${{background:C.s1,border:`1px solid ${C.b}`,borderRadius:12,padding:20,width:'100%',maxWidth:width,maxHeight:'92vh',overflowY:'auto'}} class="fade">
       <div style=${{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
         <div style=${{fontFamily:'Orbitron,monospace',fontSize:12,color:C.ac,fontWeight:700}}>${title}</div>
         <button onClick=${onClose} style=${{background:'none',border:'none',color:C.m,cursor:'pointer',fontSize:18,padding:'0 4px'}}>✕</button>
@@ -591,18 +604,6 @@ function App(){
     return()=>clearInterval(iv);
   },[user]);
 
-  // ── HELPERS DE RED (compatibles con GitHub Pages + CORS) ──────
-  // Google Apps Script no permite POST cross-origin, usamos GET
-  // con los datos serializados en base64 en el parámetro ?d=
-  function b64(obj){
-    try{return btoa(unescape(encodeURIComponent(JSON.stringify(obj))));}catch{return '';}
-  }
-  function gasGet(url,action,data){
-    const payload={...data};delete payload.action;
-    const params='?action='+encodeURIComponent(action)+'&d='+encodeURIComponent(b64(payload))+'&_='+Date.now();
-    return fetch(url+params,{signal:AbortSignal.timeout(12000)}).then(r=>r.json()).catch(()=>({ok:false}));
-  }
-
   async function silentPoll(url){
     try{
       const r=await fetch(url+'?t='+Date.now(),{signal:AbortSignal.timeout(8000)});
@@ -621,7 +622,10 @@ function App(){
     if(!cfgRef.current.scriptUrl||!navigator.onLine)return;
     if(syncTimer.current)clearTimeout(syncTimer.current);
     syncTimer.current=setTimeout(()=>{
-      gasGet(cfgRef.current.scriptUrl,'syncAll',{tunnels:t,coches:c}).catch(()=>{});
+      fetch(cfgRef.current.scriptUrl,{method:'POST',
+        body:JSON.stringify({action:'syncAll',tunnels:t,coches:c}),
+        headers:{'Content-Type':'text/plain'},
+        signal:AbortSignal.timeout(8000)}).catch(()=>{});
     },3000);
   }
 
@@ -638,12 +642,6 @@ function App(){
       setSyncMsg('✅ '+new Date().toLocaleTimeString('es-EC'));
     }catch(e){setSyncMsg('⚠ Sin red — cache local');}
     setSyncing(false);
-  }
-
-  // Función reutilizable para enviar cualquier acción a Sheets
-  function enviarASheets(action,data){
-    if(!cfgRef.current.scriptUrl||!navigator.onLine)return;
-    gasGet(cfgRef.current.scriptUrl,action,data).catch(()=>{});
   }
 
   function fireNotif(a){
@@ -677,7 +675,7 @@ function App(){
         outsideMin:Math.round(outsideMs/60000),horasEnTunel:((Date.now()-c.entryTime)/3600000).toFixed(2),
         shift:shiftOf(Date.now()),userName:user?.name};
       setHistory(p=>[entry,...p]);
-      if(config.scriptUrl)enviarASheets('logHistorial',entry);
+      if(config.scriptUrl)fetch(config.scriptUrl,{method:'POST',body:JSON.stringify({action:'logHistorial',...entry}),headers:{'Content-Type':'text/plain'}}).catch(()=>{});
     }
     const nc=coches.map(x=>x.id===id?{...x,status:'masterizando',tunnelId:null,exitTime:Date.now(),masterTime:Date.now()}:x);
     setCoches(nc);autoSync(nc,null);
@@ -692,7 +690,7 @@ function App(){
       masterMin:c.masterTime?Math.round((Date.now()-c.masterTime)/60000):0,
       shift:shiftOf(Date.now()),userName:user?.name,completedAt:Date.now()};
     setHistory(p=>[ciclo,...p]);
-    if(config.scriptUrl)enviarASheets('logCiclo',ciclo);
+    if(config.scriptUrl)fetch(config.scriptUrl,{method:'POST',body:JSON.stringify({action:'logCiclo',...ciclo}),headers:{'Content-Type':'text/plain'}}).catch(()=>{});
     const lp={productName:c.productName,unitType:c.unitType,weightPerUnit:c.weightPerUnit,weightUnit:c.weightUnit};
     const nc=coches.map(x=>x.id===id?{...x,status:'libre',units:0,totalLbs:0,lbs:0,cajetas:0,productName:'',
       productLoadTime:null,entryTime:null,exitTime:null,masterTime:null,tunnelId:null,ciclos:(x.ciclos||0)+1,lastProduct:lp}:x);
@@ -709,7 +707,7 @@ function App(){
         outsideMin:c.productLoadTime&&c.entryTime?Math.round((c.entryTime-c.productLoadTime)/60000):0,
         earlyRelease:early,shift:shiftOf(n),userName:user?.name};
       setHistory(p=>[entry,...p]);
-      if(config.scriptUrl)enviarASheets('logHistorial',entry);
+      if(config.scriptUrl)fetch(config.scriptUrl,{method:'POST',body:JSON.stringify({action:'logHistorial',...entry}),headers:{'Content-Type':'text/plain'}}).catch(()=>{});
     });
     const nc=coches.map(c=>c.tunnelId===tid&&c.status==='en-tunel'?{...c,status:'masterizando',tunnelId:null,exitTime:n,masterTime:n}:c);
     setCoches(nc);autoSync(nc,null);
@@ -778,7 +776,7 @@ ALARMAS PENDIENTES:${alarms.filter(a=>!a.ack).length}|TURNO:${SHIFTS.find(s=>s.i
 
   // ── RENDER ────────────────────────────────────────────────────
   if(view==='login')return html`<div style=${{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
-    <div style=${{background:C.s1,border:`1px solid ${C.b}`,borderRadius:14,padding:32,width:'100%',maxWidth:380}} class="fade">
+    <div style=${{background:C.s1,border:`1px solid ${C.b}`,borderRadius:14,padding:32,width:'100%',maxWidth:380}} className="modal-inner" class="fade">
       <div style=${{textAlign:'center',marginBottom:24}}>
         <div style=${{fontSize:44,marginBottom:8}}>🧊</div>
         <div style=${{fontFamily:'Orbitron,monospace',fontSize:18,color:C.ac,fontWeight:700,letterSpacing:2}}>FREEZE CONTROL</div>
@@ -799,7 +797,7 @@ ALARMAS PENDIENTES:${alarms.filter(a=>!a.ack).length}|TURNO:${SHIFTS.find(s=>s.i
 
   return html`<div style=${{display:'flex',height:'100vh',overflow:'hidden'}}>
     <!-- Sidebar -->
-    <div style=${{width:52,background:C.s1,borderRight:`1px solid ${C.b}`,display:'flex',flexDirection:'column',alignItems:'center',padding:'10px 0',flexShrink:0}}>
+    <div className="side-nav" style=${{width:52,background:C.s1,borderRight:`1px solid ${C.b}`,display:'flex',flexDirection:'column',alignItems:'center',padding:'10px 0',flexShrink:0}}>
       <div style=${{fontSize:20,marginBottom:14}}>🧊</div>
       ${NAV.map(n=>html`<button key=${n.id} onClick=${()=>setView(n.id)} title=${n.l}
         style=${{width:'100%',padding:'10px 0',background:view===n.id?`${C.ac}18`:'none',border:'none',
@@ -818,7 +816,7 @@ ALARMAS PENDIENTES:${alarms.filter(a=>!a.ack).length}|TURNO:${SHIFTS.find(s=>s.i
     </div>
 
     <!-- Main -->
-    <div style=${{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}>
+    <div className="main-wrap" style=${{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}>
       <!-- Header -->
       <div style=${{background:C.s1,borderBottom:`1px solid ${C.b}`,padding:'8px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
         <div>
@@ -826,13 +824,13 @@ ALARMAS PENDIENTES:${alarms.filter(a=>!a.ack).length}|TURNO:${SHIFTS.find(s=>s.i
           ${syncMsg&&html`<span style=${{fontSize:9,color:syncMsg.includes('✅')?C.g:syncMsg.includes('⚠')?C.w:C.m,marginLeft:10}}>${syncMsg}</span>`}
         </div>
         <div style=${{display:'flex',gap:8,alignItems:'center'}}>
-          <div style=${{display:'flex',gap:6}}>
+          <div className="header-stats" style=${{display:'flex',gap:6}}>
             ${[['LIBRES',coches.filter(c=>c.status==='libre').length,C.t2],['EN TÚNEL',coches.filter(c=>c.status==='en-tunel').length,C.w],[`${lbsEnTunel.toLocaleString()} LBS`,null,C.g],['MASTER',coches.filter(c=>c.status==='masterizando').length,'#aa88ff'],['🔔',unacked.length,C.d]].map(([l,v,c])=>html`<div key=${l} style=${{background:C.s3,border:`1px solid ${C.b}`,borderRadius:5,padding:'3px 8px',textAlign:'center'}}>
               <div style=${{fontFamily:'Orbitron,monospace',fontSize:13,fontWeight:700,color:c}}>${v!==null?v:''}</div>
               <div style=${{fontSize:8,color:C.m}}>${l}</div>
             </div>`)}
           </div>
-          <div style=${{fontSize:11,color:C.t2,textAlign:'right'}}>
+          <div className="header-user" style=${{fontSize:11,color:C.t2,textAlign:'right'}}>
             <div style=${{fontWeight:600}}>${user?.name}</div>
             <div style=${{fontSize:9,color:C.m}}>${user?.cargo}</div>
           </div>
@@ -840,7 +838,7 @@ ALARMAS PENDIENTES:${alarms.filter(a=>!a.ack).length}|TURNO:${SHIFTS.find(s=>s.i
       </div>
 
       <!-- Content -->
-      <div style=${{flex:1,overflow:'auto'}}>
+      <div style=${{flex:1,overflow:'auto',WebkitOverflowScrolling:'touch'}}>
         ${view==='dashboard'&&DashView()}
         ${view==='temps'&&TempsView()}
         ${view==='historial'&&HistorialView()}
@@ -862,13 +860,13 @@ ALARMAS PENDIENTES:${alarms.filter(a=>!a.ack).length}|TURNO:${SHIFTS.find(s=>s.i
     ${showVerif&&html`<${VerifModal} tunnel=${showVerif}
       inTunel=${coches.filter(c=>c.tunnelId===showVerif.id&&c.status==='en-tunel')}
       userName=${user?.name}
-      onSave=${log=>{setTempLogs(p=>[log,...p]);if(config.scriptUrl)enviarASheets('logTemp',log);}}
+      onSave=${log=>{setTempLogs(p=>[log,...p]);if(config.scriptUrl)fetch(config.scriptUrl,{method:'POST',body:JSON.stringify({action:'logTemp',...log}),headers:{'Content-Type':'text/plain'}}).catch(()=>{});}}
       onRelease=${releaseTunnel} onClose=${()=>setShowVerif(null)}/>`}
   </div>`;
 
   // ── DASHBOARD ────────────────────────────────────────────────
   function DashView(){
-    return html`<div style=${{padding:12,display:'grid',gridTemplateColumns:'160px 1fr 160px 150px',gap:10,minHeight:'calc(100vh - 90px)'}}>
+    return html`<div className="dash-grid" style=${{padding:12,display:'grid',gridTemplateColumns:'160px 1fr 160px 150px',gap:10,minHeight:'calc(100vh - 90px)'}}>
       <!-- Zona libre -->
       <div onDragOver=${e=>e.preventDefault()} onDrop=${dropToFree} onDragEnter=${()=>setDragOver('free')} onDragLeave=${()=>setDragOver(null)}
         style=${{background:C.s1,border:`2px dashed ${dragOver==='free'?C.ac:C.b}`,borderRadius:10,padding:10}}>
@@ -986,12 +984,12 @@ ALARMAS PENDIENTES:${alarms.filter(a=>!a.ack).length}|TURNO:${SHIFTS.find(s=>s.i
         temp:tf.airTemp?+tf.airTemp:(tf.prodTemp?+tf.prodTemp:0),
         targetTemp:actT.targetTemp,estado:tf.estado,notes:tf.notes,userName:user?.name,timestamp:Date.now()};
       setTempLogs(p=>[log,...p]);
-      if(config.scriptUrl)enviarASheets('logTemp',log);
+      if(config.scriptUrl)fetch(config.scriptUrl,{method:'POST',body:JSON.stringify({action:'logTemp',...log}),headers:{'Content-Type':'text/plain'}}).catch(()=>{});
       setTf({airTemp:'',prodTemp:'',estado:'normal',notes:''});setShowTempForm(false);
     };
-    return html`<div style=${{display:'grid',gridTemplateColumns:'200px 1fr',gap:0,height:'calc(100vh - 90px)'}}>
+    return html`<div className="temp-layout" style=${{display:'grid',gridTemplateColumns:'200px 1fr',gap:0,height:'calc(100vh - 90px)'}}>
       <!-- Selector túneles -->
-      <div style=${{background:C.s1,borderRight:`1px solid ${C.b}`,padding:12,overflowY:'auto'}}>
+      <div className="temp-selector" style=${{background:C.s1,borderRight:`1px solid ${C.b}`,padding:12,overflowY:'auto'}}>
         <div style=${{fontFamily:'Orbitron,monospace',fontSize:9,color:C.m,marginBottom:10,letterSpacing:1}}>TÚNELES</div>
         ${tunnels.map(t=>{
           const logs=tempLogs.filter(l=>l.tunnelId===t.id);const last=logs[0];
@@ -1218,7 +1216,7 @@ ALARMAS PENDIENTES:${alarms.filter(a=>!a.ack).length}|TURNO:${SHIFTS.find(s=>s.i
               </div>`}
               <div style=${{display:'flex',gap:5,marginTop:8}}>
                 <${Btn} sm=${true} color=${C.ac} onClick=${()=>{setEditCoche(c);setShowCocheForm(true);}}>✏ Editar</${Btn}>
-                <${Btn} sm=${true} color=${C.d} onClick=${()=>{if(!confirm(`¿Eliminar coche #${c.number}?`))return;const nc=coches.filter(x=>x.id!==c.id);setCoches(nc);autoSync(nc,null);if(config.scriptUrl)enviarASheets('deleteCoche',{cocheId:c.id});}}>✕ Eliminar</${Btn}>
+                <${Btn} sm=${true} color=${C.d} onClick=${()=>{if(!confirm(`¿Eliminar coche #${c.number}?`))return;const nc=coches.filter(x=>x.id!==c.id);setCoches(nc);autoSync(nc,null);if(config.scriptUrl)fetch(config.scriptUrl,{method:'POST',body:JSON.stringify({action:'deleteCoche',cocheId:c.id}),headers:{'Content-Type':'text/plain'}}).catch(()=>{});}}>✕ Eliminar</${Btn}>
               </div>
             </div>`;
           })}
@@ -1251,7 +1249,7 @@ ALARMAS PENDIENTES:${alarms.filter(a=>!a.ack).length}|TURNO:${SHIFTS.find(s=>s.i
           <${Fld} label="URL del script /exec" value=${config.scriptUrl} onChange=${v=>setConfig(p=>({...p,scriptUrl:v.trim()}))} placeholder="https://script.google.com/macros/s/.../exec"/>
           <div style=${{display:'flex',gap:8,marginBottom:8}}>
             <${Btn} onClick=${()=>loadFromSheets(config.scriptUrl)} disabled=${syncing||!config.scriptUrl||!online} color=${C.g}>${syncing?html`<${Spin}/> Cargando...`:'↓ Cargar desde Sheets'}</${Btn}>
-            <${Btn} onClick=${()=>{if(!config.scriptUrl)return;setSyncing(true);gasGet(config.scriptUrl,'syncAll',{tunnels,coches}).then(r=>setSyncMsg(r.ok?'✅ Sincronizado':'❌ Error')).catch(()=>setSyncMsg('❌ Error')).finally(()=>setSyncing(false));}} disabled=${syncing||!config.scriptUrl||!online} color=${C.ac}>${syncing?html`<${Spin}/>`:'☁ Subir a Sheets'}</${Btn}>
+            <${Btn} onClick=${()=>{if(!config.scriptUrl)return;setSyncing(true);fetch(config.scriptUrl,{method:'POST',body:JSON.stringify({action:'syncAll',tunnels,coches}),headers:{'Content-Type':'text/plain'}}).then(()=>setSyncMsg('✅ Sincronizado')).catch(()=>setSyncMsg('❌ Error')).finally(()=>setSyncing(false));}} disabled=${syncing||!config.scriptUrl||!online} color=${C.ac}>${syncing?html`<${Spin}/>`:'☁ Subir a Sheets'}</${Btn}>
           </div>
           ${syncMsg&&html`<div style=${{fontSize:10,color:syncMsg.includes('✅')?C.g:C.d,padding:'5px 8px',background:syncMsg.includes('✅')?`${C.g}10`:`${C.d}10`,borderRadius:5}}>${syncMsg}</div>`}
         </div>
