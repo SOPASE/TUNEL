@@ -70,7 +70,7 @@ var SCRIPT_URL='https://script.google.com/macros/s/AKfycbytR0Bacr5Av34cIMAyH5pc3
 var TT={amoniaco:{l:'Amoniaco',c:'#00e888'},freon:{l:'Freón',c:'#00c8ff'}};
 var SHIFTS=[{id:'manana',l:'Mañana',c:'#ffaa00'},{id:'tarde',l:'Tarde',c:'#00c8ff'},{id:'noche',l:'Noche',c:'#aa88ff'}];
 var PRODS=[{name:'Camarones',unitType:'caja',weightPerUnit:4,weightUnit:'lbs'},{name:'Langostinos',unitType:'caja',weightPerUnit:5,weightUnit:'lbs'},{name:'Pescado',unitType:'caja',weightPerUnit:10,weightUnit:'kg'},{name:'Tilapia',unitType:'caja',weightPerUnit:8,weightUnit:'lbs'},{name:'Calamar',unitType:'funda',weightPerUnit:2,weightUnit:'kg'},{name:'Pulpo',unitType:'funda',weightPerUnit:1.5,weightUnit:'kg'}];
-var CK='fc_v8';var CFG='fc_cfg_v6';
+var CK='fc_v10';var CFG='fc_cfg_v7'; // v10 limpia cache viejo con ejemplos
 
 // ── SISTEMA DE TEMAS ─────────────────────────────────────
 var THEMES_DEF={
@@ -190,26 +190,14 @@ var USERS=[
   {id:'u4',name:'Pedro Reyes',email:'pedro@planta.com',password:'op123',role:'operador',cargo:'Operador de Túneles'},
   {id:'u5',name:'Ana Suárez',email:'ana@planta.com',password:'sup123',role:'supervisor',cargo:'Supervisora Nocturna'}
 ];
+// ── DATOS POR DEFECTO (solo estructura, sin ejemplos) ────
 var DEF_T=[
   {id:'t1',name:'Túnel Amoniaco 1',type:'amoniaco',capacityCoches:8,targetTemp:-30,checkIntervalMin:120,targetTimeHours:9,color:'#00e888'},
   {id:'t2',name:'Túnel Amoniaco 2',type:'amoniaco',capacityCoches:6,targetTemp:-30,checkIntervalMin:120,targetTimeHours:9,color:'#00e888'},
   {id:'t3',name:'Túnel Freón 1',type:'freon',capacityCoches:10,targetTemp:-18,checkIntervalMin:120,targetTimeHours:13,color:'#00c8ff'}
 ];
-var DEF_C=[
-  {id:'c1',number:'001',productName:'Camarones',unitType:'caja',units:120,weightPerUnit:4,weightUnit:'lbs',totalLbs:480,status:'libre',tunnelId:null,productLoadTime:N-45*60000,entryTime:null,exitTime:null,ciclos:3,lastProduct:null},
-  {id:'c2',number:'002',productName:'Langostinos',unitType:'caja',units:85,weightPerUnit:5,weightUnit:'lbs',totalLbs:425,status:'en-tunel',tunnelId:'t1',productLoadTime:N-26*3600000,entryTime:N-25200000,exitTime:null,ciclos:7,lastProduct:null},
-  {id:'c3',number:'003',productName:'Camarones',unitType:'caja',units:200,weightPerUnit:4,weightUnit:'lbs',totalLbs:800,status:'en-tunel',tunnelId:'t1',productLoadTime:N-5*3600000,entryTime:N-3600000,exitTime:null,ciclos:5,lastProduct:null},
-  {id:'c4',number:'004',productName:'',unitType:'caja',units:0,weightPerUnit:4,weightUnit:'lbs',totalLbs:0,status:'libre',tunnelId:null,productLoadTime:null,entryTime:null,exitTime:null,ciclos:0,lastProduct:null},
-  {id:'c5',number:'005',productName:'Langostinos',unitType:'caja',units:175,weightPerUnit:5,weightUnit:'lbs',totalLbs:875,status:'en-tunel',tunnelId:'t2',productLoadTime:N-7*3600000,entryTime:N-5400000,exitTime:null,ciclos:12,lastProduct:null},
-  {id:'c6',number:'006',productName:'Camarones',unitType:'caja',units:90,weightPerUnit:4,weightUnit:'lbs',totalLbs:360,status:'masterizando',tunnelId:null,productLoadTime:N-15*3600000,entryTime:N-12*3600000,exitTime:N-1800000,masterTime:N-1800000,ciclos:9,lastProduct:null},
-  {id:'c7',number:'007',productName:'Calamar',unitType:'funda',units:145,weightPerUnit:2,weightUnit:'kg',totalLbs:640,status:'masterizando',tunnelId:null,productLoadTime:N-18*3600000,entryTime:N-16*3600000,exitTime:N-3600000,masterTime:N-3600000,ciclos:4,lastProduct:null},
-  {id:'c8',number:'008',productName:'Tilapia',unitType:'caja',units:60,weightPerUnit:8,weightUnit:'lbs',totalLbs:480,status:'en-tunel',tunnelId:'t3',productLoadTime:N-12*3600000,entryTime:N-10800000,exitTime:null,ciclos:6,lastProduct:null}
-];
-var DEF_H=[
-  {id:'h1',number:'098',productName:'Camarones',unitType:'caja',units:200,weightPerUnit:4,weightUnit:'lbs',totalLbs:800,tunnelName:'Túnel Amoniaco 1',tunnelType:'amoniaco',productLoadTime:N-37*3600000,entryTime:N-36*3600000,exitTime:N-27*3600000,outsideMin:17,horasEnTunel:'9.0',shift:'manana',userName:'María Torres'},
-  {id:'h2',number:'099',productName:'Langostinos',unitType:'caja',units:120,weightPerUnit:5,weightUnit:'lbs',totalLbs:600,tunnelName:'Túnel Freón 1',tunnelType:'freon',productLoadTime:N-59*3600000,entryTime:N-57*3600000,exitTime:N-44*3600000,outsideMin:30,horasEnTunel:'13.0',shift:'noche',userName:'Ana Suárez'},
-  {id:'h3',number:'097',productName:'Camarones',unitType:'caja',units:180,weightPerUnit:4,weightUnit:'lbs',totalLbs:720,tunnelName:'Túnel Amoniaco 2',tunnelType:'amoniaco',productLoadTime:N-74*3600000,entryTime:N-72*3600000,exitTime:N-63*3600000,outsideMin:45,horasEnTunel:'9.0',shift:'noche',userName:'Juan López'}
-];
+var DEF_C=[];  // Sin ejemplos — Sheets es la fuente de verdad
+var DEF_H=[];  // Sin ejemplos
 
 // ── MAPEO SHEETS ─────────────────────────────────────────
 function mapC(rows){return rows.filter(function(r){return r[0]}).map(function(r){return{id:String(r[0]),number:String(r[1]),status:r[2]||'libre',productName:r[3]||'',unitType:r[4]||'caja',units:+r[5]||0,weightPerUnit:+r[6]||0,weightUnit:r[7]||'lbs',totalLbs:+r[8]||0,tunnelId:r[9]||null,tunnelName:r[10]||'',ciclos:+r[11]||0,productLoadTime:r[12]?new Date(String(r[12])).getTime()||null:null,entryTime:r[13]?new Date(String(r[13])).getTime()||null:null,exitTime:r[14]?new Date(String(r[14])).getTime()||null:null,masterTime:null,lastProduct:null}})}
@@ -1671,22 +1659,27 @@ function App(){
 
   // Auto-detect GAS URL
   // ── CARGA AUTOMÁTICA AL ARRANCAR ────────────────────────
-  // Si hay scriptUrl: carga datos frescos de Sheets al iniciar
-  // Esto también pre-carga usuarios de Sheets ANTES del login
-  // para que credenciales editadas en Sheets funcionen de inmediato
+  var _sheetsReady=useState(!getGUrl()); // true=listo, false=esperando Sheets
+  var sheetsReady=_sheetsReady[0],setSheetsReady=_sheetsReady[1];
+
   useEffect(function(){
     var url=getGUrl();
-    if(url){
-      // Pre-cargar solo usuarios (rápido) para login
-      fetch(url+'?t='+Date.now())
-        .then(function(r){return r.json()})
-        .then(function(d){
-          if(d.usuarios&&d.usuarios.length){var m=mapU(d.usuarios);if(m.length)usersRef.current=m;}
-          // Si ya hay sesión activa, cargar todo
-          if(stR.current===null&&view==='dashboard'){load(url);}
-        })
-        .catch(function(){});
-    }
+    if(!url){setSheetsReady(true);return;}
+    // Con Sheets: cargar todo antes de mostrar la app
+    setSyncing(true);setSMsg('Conectando con Sheets...');
+    fetch(url+'?t='+Date.now())
+      .then(function(r){return r.json()})
+      .then(function(d){
+        if(d.usuarios&&d.usuarios.length){var m=mapU(d.usuarios);if(m.length)usersRef.current=m;}
+        if(d.coches){var nc=mapC(d.coches);coR.current=nc;setCoches(nc);}
+        if(d.tuneles&&d.tuneles.length){var nt=mapT(d.tuneles);tuR.current=nt;setTunnels(nt);}
+        if(d.historial){var nh=mapH(d.historial);hiR.current=nh;setHistory(nh);}
+        if(d.tempRegistros){var ntl=mapTL(d.tempRegistros);tlR.current=ntl;setTLogs(ntl);}
+        setSMsg('Sheets OK');setSyncing(false);setSheetsReady(true);
+      })
+      .catch(function(){
+        setSMsg('Sin conexion — datos locales');setSyncing(false);setSheetsReady(true);
+      });
   },[]);
 
   // Polling 30s
@@ -1701,11 +1694,15 @@ function App(){
     fetch(url+'?t='+Date.now()).then(function(r){return r.json()}).then(function(d){
       if(!d.ok)return;
       if(Date.now()-lastChangeRef.current < 15000)return;
-      if(d.coches&&d.coches.length)setCoches(mapC(d.coches));
-      if(d.tuneles&&d.tuneles.length)setTunnels(mapT(d.tuneles));
-      if(d.historial&&d.historial.length)setHistory(mapH(d.historial));
-      if(d.tempRegistros&&d.tempRegistros.length)setTLogs(mapTL(d.tempRegistros));
-      // Actualizar usuarios en memoria (sin causar re-render)
+      // Igual que load(): Sheets manda, app obedece
+      var nc=d.coches?mapC(d.coches):null;
+      var nt=d.tuneles&&d.tuneles.length?mapT(d.tuneles):null;
+      var nh=d.historial?mapH(d.historial):null;
+      var ntl=d.tempRegistros?mapTL(d.tempRegistros):null;
+      if(nc!==null){coR.current=nc;setCoches(nc);}
+      if(nt!==null){tuR.current=nt;setTunnels(nt);}
+      if(nh!==null){hiR.current=nh;setHistory(nh);}
+      if(ntl!==null){tlR.current=ntl;setTLogs(ntl);}
       if(d.usuarios&&d.usuarios.length){var m=mapU(d.usuarios);if(m.length)usersRef.current=m;}
     }).catch(function(){});
   }
@@ -1717,19 +1714,26 @@ function App(){
   // ── ENVIO ROBUSTO A SHEETS con reintentos ─────────────
   function pushToSheets(payload,attempts){
     var url=cfR.current.scriptUrl;
-    if(!url||!navigator.onLine){retryQueue.current.push({payload:payload,attempts:attempts||0});return;}
+    if(!url){return;} // Sin URL, no intentar
+    if(!navigator.onLine){retryQueue.current.push({payload:payload,attempts:attempts||0});return;}
     var att=attempts||0;
     setSyncSt('syncing');
     fetch(url,{method:'POST',body:JSON.stringify(payload),headers:{'Content-Type':'text/plain'}})
       .then(function(r){return r.text()})
-      .then(function(){setSyncSt('ok');setSMsg('Sheets OK '+new Date().toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'}));setTimeout(function(){setSyncSt('idle')},4000);})
-      .catch(function(){
+      .then(function(txt){
+        try{var j=JSON.parse(txt);if(!j.ok)throw new Error(j.error||'GS error');}catch(e){if(txt.indexOf('{')===0)throw e;}
+        setSyncSt('ok');
+        setSMsg('Sheets OK '+new Date().toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'}));
+        setTimeout(function(){setSyncSt('idle');setSMsg('');},5000);
+        lastChangeRef.current=Date.now(); // refrescar para que poll no pise datos recién enviados
+      })
+      .catch(function(err){
         if(att<3){
           var delay=[3000,8000,20000][att]||20000;
-          setTimeout(function(){pushToSheets(payload,att+1)},delay);
           setSyncSt('error');setSMsg('Reintentando ('+(att+1)+'/3)...');
+          setTimeout(function(){pushToSheets(payload,att+1);},delay);
         }else{
-          setSyncSt('error');setSMsg('Error Sheets — revisa URL o conexion');
+          setSyncSt('error');setSMsg('⚠ Error Sheets: '+(err.message||'revisa URL'));
         }
       });
   }
@@ -1763,7 +1767,39 @@ function App(){
     },800); // debounce 800ms para agrupar cambios rapidos
   }
 
-  function load(url){if(!url)return;setSyncing(true);setSMsg('Cargando...');fetch(url+'?t='+Date.now()).then(function(r){return r.json()}).then(function(d){if(!d.ok)throw new Error(d.error);if(d.coches&&d.coches.length)setCoches(mapC(d.coches));if(d.tuneles&&d.tuneles.length)setTunnels(mapT(d.tuneles));if(d.historial&&d.historial.length)setHistory(mapH(d.historial));if(d.tempRegistros&&d.tempRegistros.length)setTLogs(mapTL(d.tempRegistros));if(d.usuarios&&d.usuarios.length){var mapped=mapU(d.usuarios);if(mapped.length)usersRef.current=mapped;}setSMsg('OK '+new Date().toLocaleTimeString('es-EC'));setSyncing(false)}).catch(function(){setSMsg('Sin conexion');setSyncing(false)})}
+  function load(url){
+    if(!url)return;
+    setSyncing(true);setSMsg('Cargando desde Sheets...');
+    fetch(url+'?t='+Date.now())
+      .then(function(r){return r.json()})
+      .then(function(d){
+        if(!d.ok)throw new Error(d.error||'Error desconocido');
+        // Sheets es la fuente de verdad — siempre aplicar lo que llegue
+        var nc=d.coches?mapC(d.coches):null;
+        var nt=d.tuneles&&d.tuneles.length?mapT(d.tuneles):null;
+        var nh=d.historial?mapH(d.historial):null;
+        var ntl=d.tempRegistros?mapTL(d.tempRegistros):null;
+        if(nc!==null){coR.current=nc;setCoches(nc);}
+        if(nt!==null){tuR.current=nt;setTunnels(nt);}
+        if(nh!==null){hiR.current=nh;setHistory(nh);}
+        if(ntl!==null){tlR.current=ntl;setTLogs(ntl);}
+        if(d.usuarios&&d.usuarios.length){var m=mapU(d.usuarios);if(m.length)usersRef.current=m;}
+        // Guardar en cache local lo que vino de Sheets
+        sc({
+          coches:nc||coR.current,
+          tunnels:nt||tuR.current,
+          history:nh||hiR.current,
+          tLogs:ntl||tlR.current
+        });
+        setSMsg('Sheets OK '+new Date().toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'}));
+        setSyncSt('ok');setTimeout(function(){setSyncSt('idle')},4000);
+        setSyncing(false);
+      })
+      .catch(function(err){
+        setSMsg('Error: '+(err.message||'Sin conexion'));
+        setSyncSt('error');setSyncing(false);
+      });
+  }
 
   function mSync(){
     if(!config.scriptUrl)return;
@@ -2109,6 +2145,14 @@ function App(){
   var NAV=[{id:'dashboard',l:'Dashboard'},{id:'temps',l:'Temperaturas'},{id:'historial',l:'Historial'},{id:'ia',l:'IA Asistente'},{id:'gestion',l:'Gestion',adm:true}].filter(function(n){return !n.adm||isAdmin});
 
   // LOGIN
+  if(!sheetsReady)return h('div',{style:{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:C.s1,gap:16}},
+    h('div',{style:{fontSize:40}},'❄'),
+    h('div',{style:{fontSize:14,color:C.ac,fontWeight:700,fontFamily:'monospace'}},'FREEZE CONTROL'),
+    h('div',{style:{fontSize:12,color:C.m}},'Conectando con Google Sheets...'),
+    h('div',{style:{width:180,height:3,background:C.b,borderRadius:2,overflow:'hidden',marginTop:8}},
+      h('div',{style:{width:'60%',height:'100%',background:C.ac,borderRadius:2,animation:'pulse 1.2s ease-in-out infinite'}})
+    )
+  );
   if(view==='login')return h('div',{style:{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',padding:16,background:'#06090f'}},
     h('div',{className:'fade',style:{background:C.s1,border:'1px solid '+C.b,borderRadius:14,padding:32,width:'100%',maxWidth:400}},
       h('div',{style:{textAlign:'center',marginBottom:24}},
