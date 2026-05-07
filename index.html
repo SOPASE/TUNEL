@@ -395,7 +395,13 @@ function MCarga(p){
     ),
     h('div',{style:{display:'flex',gap:8,justifyContent:'flex-end'}},
       h(Btn,{onClick:p.onClose,color:C.m},'Cancelar'),
-      h(Btn,{onClick:function(){if(!+f.units)return;var lote=f.lote||nextLote(f.productName);saveLastLote(lote);p.onSave(Object.assign({},p.c,f,{units:+f.units,weightPerUnit:+f.weightPerUnit,totalLbs:lbs,lbs:lbs,productLoadTime:Date.now(),status:'libre',lote:lote}));p.onClose();},disabled:!+f.units||!f.productName,color:C.g},'Cargar Coche #'+p.c.number)
+      h(Btn,{onClick:function(){
+        if(!+f.units)return;
+        var lote=f.lote||nextLote(f.productName);
+        saveLastLote(lote);
+        try{p.onSave(Object.assign({},p.c,f,{units:+f.units,weightPerUnit:+f.weightPerUnit,totalLbs:lbs,lbs:lbs,productLoadTime:Date.now(),status:'libre',lote:lote}));}catch(e){console.error(e);}
+        p.onClose();
+      },disabled:!+f.units||!f.productName,color:C.g},'Cargar Coche #'+p.c.number)
     )
   );
 }
@@ -405,28 +411,49 @@ function MCocheForm(p){
   var _f=useState(ini?Object.assign({},ini):{id:'',number:'',productName:def.name,unitType:def.unitType,units:0,weightPerUnit:def.weightPerUnit,weightUnit:def.weightUnit,status:'libre',tunnelId:null,entryTime:null,exitTime:null,productLoadTime:null,ciclos:0,lastProduct:null});
   var f=_f[0],sf=_f[1];
   var _err=useState('');var err=_err[0],setErr=_err[1];
+  var _saving=useState(false);var saving=_saving[0],setSaving=_saving[1];
   function upd(k,v){sf(function(prev){var o=Object.assign({},prev);o[k]=v;return o});setErr('');}
   var lbs=calcLbs(f.units||0,f.weightPerUnit,f.weightUnit);
-  var canSave=!!f.number.trim();
   function guardar(){
-    if(!f.number.trim()){setErr('El número de coche es obligatorio');return;}
-    p.onSave(Object.assign({},f,{id:f.id||gid(),units:+f.units,weightPerUnit:+f.weightPerUnit,totalLbs:lbs,lbs:lbs,productLoadTime:+f.units>0?(f.productLoadTime||Date.now()):null}));
-    p.onClose();
+    if(saving)return;
+    if(!String(f.number||'').trim()){setErr('El número de coche es obligatorio');return;}
+    setSaving(true);
+    try{
+      p.onSave(Object.assign({},f,{id:f.id||gid(),number:String(f.number).trim(),units:+f.units,weightPerUnit:+f.weightPerUnit,totalLbs:lbs,lbs:lbs,productLoadTime:+f.units>0?(f.productLoadTime||Date.now()):null}));
+    }catch(e){console.error('saveCoche error:',e);}
+    p.onClose(); // siempre cerrar, aunque onSave falle
   }
   return h(Modal,{title:ini?'Editar Coche #'+ini.number:'Nuevo Coche',onClose:p.onClose,width:480},
-    h(Inp,{label:'Numero de coche *',value:f.number,onChange:function(v){upd('number',v)},placeholder:'Ej: 009'}),
-    err&&h('div',{style:{background:C.d+'15',border:'1px solid '+C.d+'50',borderRadius:6,padding:'6px 10px',marginTop:-6,marginBottom:8,fontSize:11,color:C.d}},'⚠ '+err),
-    h('div',{style:{marginBottom:10}},h('div',{style:{fontSize:9,color:C.m,marginBottom:5,textTransform:'uppercase'}},'Producto'),h('div',{style:{display:'flex',flexWrap:'wrap',gap:4,marginBottom:6}},PRODS.map(function(pr){return h('button',{key:pr.name,onClick:function(){sf(function(prev){return Object.assign({},prev,{productName:pr.name,unitType:pr.unitType,weightPerUnit:pr.weightPerUnit,weightUnit:pr.weightUnit})})},style:{padding:'4px 10px',borderRadius:12,border:'1px solid '+(f.productName===pr.name?C.ac:C.b),background:f.productName===pr.name?C.ac+'18':C.s3,color:f.productName===pr.name?C.ac:C.t2,cursor:'pointer',fontSize:10}},pr.name)}))),
-    h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 80px',gap:8,marginBottom:12}},
-      h('div',null,h('div',{style:{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase'}},'Cantidad'),h('input',{type:'number',value:f.units,onChange:function(e){upd('units',e.target.value)},style:{width:'100%',background:C.s3,border:'1px solid '+C.b,borderRadius:6,padding:'8px 10px',color:C.t,fontSize:14}})),
-      h('div',null,h('div',{style:{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase'}},'Peso/unidad'),h('input',{type:'number',step:'0.1',value:f.weightPerUnit,onChange:function(e){upd('weightPerUnit',e.target.value)},style:{width:'100%',background:C.s3,border:'1px solid '+C.b,borderRadius:6,padding:'8px 10px',color:C.t,fontSize:14}})),
-      h('div',null,h('div',{style:{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase'}},'Unidad'),h('div',{style:{display:'flex',flexDirection:'column',gap:4}},['lbs','kg'].map(function(u){return h('button',{key:u,onClick:function(){upd('weightUnit',u)},style:{padding:'5px',borderRadius:5,border:'1px solid '+(f.weightUnit===u?C.w:C.b),background:f.weightUnit===u?C.w+'20':C.s3,color:f.weightUnit===u?C.w:C.t2,cursor:'pointer',fontSize:11,fontWeight:600}},u)})))
+    h(Inp,{label:'Número de coche *',value:f.number,onChange:function(v){upd('number',v)},placeholder:'Ej: 009'}),
+    err&&h('div',{style:{background:C.d+'15',border:'1px solid '+C.d+'50',borderRadius:6,padding:'6px 10px',marginBottom:8,fontSize:11,color:C.d}},'⚠ '+err),
+    h('div',{style:{marginBottom:10}},
+      h('div',{style:{fontSize:9,color:C.m,marginBottom:5,textTransform:'uppercase'}},'Producto'),
+      h('div',{style:{display:'flex',flexWrap:'wrap',gap:4,marginBottom:6}},
+        PRODS.map(function(pr){return h('button',{key:pr.name,onClick:function(){sf(function(prev){return Object.assign({},prev,{productName:pr.name,unitType:pr.unitType,weightPerUnit:pr.weightPerUnit,weightUnit:pr.weightUnit})})},
+          style:{padding:'4px 10px',borderRadius:12,border:'1px solid '+(f.productName===pr.name?C.ac:C.b),background:f.productName===pr.name?C.ac+'18':C.s3,color:f.productName===pr.name?C.ac:C.t2,cursor:'pointer',fontSize:10}},pr.name)})
+      )
     ),
-    +f.units>0&&h('div',{style:{background:C.g+'12',border:'1px solid '+C.g+'30',borderRadius:8,padding:10,marginBottom:12,textAlign:'center'}},h('div',{style:{fontSize:9,color:C.m}},'TOTAL LIBRAS'),h('div',{style:{fontFamily:'monospace',fontSize:22,color:C.g,fontWeight:700}},lbs.toLocaleString()+' lbs')),
+    h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 80px',gap:8,marginBottom:12}},
+      h('div',null,h('div',{style:{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase'}},'Cantidad'),
+        h('input',{type:'number',inputMode:'numeric',value:f.units,onChange:function(e){upd('units',e.target.value)},style:{width:'100%',background:C.s3,border:'1px solid '+C.b,borderRadius:6,padding:'8px 10px',color:C.t,fontSize:14}})),
+      h('div',null,h('div',{style:{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase'}},'Peso/unidad'),
+        h('input',{type:'number',inputMode:'decimal',step:'0.1',value:f.weightPerUnit,onChange:function(e){upd('weightPerUnit',e.target.value)},style:{width:'100%',background:C.s3,border:'1px solid '+C.b,borderRadius:6,padding:'8px 10px',color:C.t,fontSize:14}})),
+      h('div',null,h('div',{style:{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase'}},'Unidad'),
+        h('div',{style:{display:'flex',flexDirection:'column',gap:4}},
+          ['lbs','kg'].map(function(u){return h('button',{key:u,onClick:function(){upd('weightUnit',u)},
+            style:{padding:'5px',borderRadius:5,border:'1px solid '+(f.weightUnit===u?C.w:C.b),background:f.weightUnit===u?C.w+'20':C.s3,color:f.weightUnit===u?C.w:C.t2,cursor:'pointer',fontSize:11,fontWeight:600}},u)})))
+    ),
+    +f.units>0&&h('div',{style:{background:C.g+'12',border:'1px solid '+C.g+'30',borderRadius:8,padding:10,marginBottom:12,textAlign:'center'}},
+      h('div',{style:{fontSize:9,color:C.m}},'TOTAL LIBRAS'),
+      h('div',{style:{fontFamily:'monospace',fontSize:22,color:C.g,fontWeight:700}},lbs.toLocaleString()+' lbs')
+    ),
     h('div',{style:{display:'flex',gap:8,justifyContent:'flex-end',alignItems:'center'}},
-      !canSave&&h('span',{style:{fontSize:10,color:C.m,flex:1}},'* Completa el número de coche'),
+      !String(f.number||'').trim()&&h('span',{style:{fontSize:10,color:C.m,flex:1}},'* Completa el número de coche'),
       h(Btn,{onClick:p.onClose,color:C.m},'Cancelar'),
-      h(Btn,{onClick:guardar,disabled:!canSave,color:C.g},'Guardar')
+      h('button',{
+        onClick:guardar,
+        style:{background:C.g,color:'#000',border:'none',borderRadius:8,padding:'10px 18px',cursor:'pointer',fontWeight:700,fontSize:12,opacity:saving?0.6:1}
+      },saving?'Guardando...':'Guardar')
     )
   );
 }
@@ -1713,27 +1740,35 @@ function App(){
 
   // ── ENVIO ROBUSTO A SHEETS con reintentos ─────────────
   function pushToSheets(payload,attempts){
-    var url=cfR.current.scriptUrl;
-    if(!url){return;} // Sin URL, no intentar
+    var url=cfR.current.scriptUrl||getGUrl()||SCRIPT_URL||'';
+    if(!url){setSyncSt('error');setSMsg('⚠ Configura la URL de Sheets en Gestión → Config');return;}
     if(!navigator.onLine){retryQueue.current.push({payload:payload,attempts:attempts||0});return;}
     var att=attempts||0;
-    setSyncSt('syncing');
+    setSyncSt('syncing');setSMsg('Enviando a Sheets...');
     fetch(url,{method:'POST',body:JSON.stringify(payload),headers:{'Content-Type':'text/plain'}})
       .then(function(r){return r.text()})
       .then(function(txt){
-        try{var j=JSON.parse(txt);if(!j.ok)throw new Error(j.error||'GS error');}catch(e){if(txt.indexOf('{')===0)throw e;}
+        try{
+          var j=JSON.parse(txt);
+          if(!j.ok)throw new Error(j.error||'Sheets devolvió error');
+        }catch(e){
+          if(txt.indexOf('<!DOCTYPE')>-1)throw new Error('La URL no es un Apps Script válido');
+          if(txt.indexOf('{')!==0)throw new Error('Respuesta inesperada de Sheets');
+        }
         setSyncSt('ok');
-        setSMsg('Sheets OK '+new Date().toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'}));
-        setTimeout(function(){setSyncSt('idle');setSMsg('');},5000);
-        lastChangeRef.current=Date.now(); // refrescar para que poll no pise datos recién enviados
+        setSMsg('✅ Sheets OK '+new Date().toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'}));
+        setTimeout(function(){setSyncSt('idle');setSMsg('');},6000);
+        lastChangeRef.current=Date.now();
       })
       .catch(function(err){
+        var msg=err.message||'Error de red';
         if(att<3){
-          var delay=[3000,8000,20000][att]||20000;
-          setSyncSt('error');setSMsg('Reintentando ('+(att+1)+'/3)...');
+          var delay=[4000,10000,25000][att]||25000;
+          setSyncSt('error');setSMsg('⚠ Reintento '+(att+1)+'/3: '+msg);
           setTimeout(function(){pushToSheets(payload,att+1);},delay);
         }else{
-          setSyncSt('error');setSMsg('⚠ Error Sheets: '+(err.message||'revisa URL'));
+          setSyncSt('error');
+          setSMsg('❌ Sheets falló: '+msg+' — revisa la URL en Config');
         }
       });
   }
@@ -1752,19 +1787,23 @@ function App(){
 
   function autoSync(nc,nt){
     var c=nc||coR.current,t=nt||tuR.current;
+    // 1. Guardar en cache local siempre
     sc({coches:c,tunnels:t,history:hiR.current,tLogs:tlR.current});
     lastChangeRef.current=Date.now();
-    if(!cfR.current.scriptUrl)return;
+    // 2. Determinar URL (de config, ref, o localStorage como fallback)
+    var url=cfR.current.scriptUrl||getGUrl()||SCRIPT_URL||'';
+    if(!url)return;
+    // 3. Enviar a Sheets con debounce
     if(syncTimer.current)clearTimeout(syncTimer.current);
     syncTimer.current=setTimeout(function(){
       pushToSheets({
         action:'syncAll',
         tunnels:t,
         coches:c,
-        historial:hiR.current.slice(0,100), // ultimos 100 registros
+        historial:hiR.current.slice(0,100),
         tempRegistros:tlR.current.slice(0,200)
       });
-    },800); // debounce 800ms para agrupar cambios rapidos
+    },800);
   }
 
   function load(url){
@@ -1890,7 +1929,14 @@ function App(){
     if(escRef.current[id]){clearInterval(escRef.current[id].iv);delete escRef.current[id];}
     setAlarms(function(p){return p.map(function(a){return a.id===id?Object.assign({},a,{ack:true}):a})});
   }
-  function saveCoche(c){var nc=editC?coches.map(function(x){return x.id===c.id?c:x}):[...coches,c];coR.current=nc;setCoches(nc);autoSync(nc,null);setShowForm(false);setEditC(null)}
+  function saveCoche(c){
+    var isNew=!editC;
+    var nc=isNew?[...coR.current,c]:coR.current.map(function(x){return x.id===c.id?c:x});
+    coR.current=nc;setCoches(nc);
+    setShowForm(false);setEditC(null);
+    // Sync a Sheets: autoSync envía todos los coches
+    autoSync(nc,null);
+  }
   function saveTunnel(t){var nt=editT?tunnels.map(function(x){return x.id===t.id?t:x}):[...tunnels,t];tuR.current=nt;setTunnels(nt);autoSync(null,nt);setShowTForm(false);setEditT(null)}
   // ══════════════════════════════════════════════════════
   // MOTOR IA LOCAL — análisis inteligente sin API key
