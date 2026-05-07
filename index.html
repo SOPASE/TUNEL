@@ -83,6 +83,10 @@ function sc(d){try{localStorage.setItem(CK,JSON.stringify(Object.assign({},d,{_a
 function lc(){try{return JSON.parse(localStorage.getItem(CK)||'{}')}catch(e){return{}}}
 function scfg(d){try{localStorage.setItem(CFG,JSON.stringify(d))}catch(e){}}
 function lcfg(){try{return JSON.parse(localStorage.getItem(CFG)||'{}')}catch(e){return{}}}
+// Script URL global — la pone el admin, la leen todos
+var GURL_KEY='fc_gurl_v1';
+function getGUrl(){try{return localStorage.getItem(GURL_KEY)||''}catch(e){return''}}
+function setGUrl(u){try{localStorage.setItem(GURL_KEY,u)}catch(e){}}
 var SES_KEY='fc_ses_v1';
 function saveSession(u){try{localStorage.setItem(SES_KEY,JSON.stringify({userId:u.id,ts:Date.now()}))}catch(e){}}
 function loadSession(){try{var s=JSON.parse(localStorage.getItem(SES_KEY)||'null');if(!s||Date.now()-s.ts>86400000*30)return null;return USERS.find(function(u){return u.id===s.userId})||null}catch(e){return null}}
@@ -963,8 +967,11 @@ function VGestion(p){
     ),
     tab==='config'&&p.isAdmin&&h('div',{style:{maxWidth:600}},
       h('div',{style:{background:C.s1,border:'1px solid '+C.b,borderRadius:10,padding:16,marginBottom:12}},
-        h('div',{style:{fontFamily:'monospace',fontSize:11,color:C.ac,marginBottom:12,fontWeight:700}},'GOOGLE SHEETS'),
-        h(Inp,{label:'URL del script /exec',value:p.cfg.scriptUrl,onChange:function(v){p.setCfg(function(prev){return Object.assign({},prev,{scriptUrl:v.trim()})})},placeholder:'https://script.google.com/macros/s/.../exec'}),
+        h('div',{style:{fontFamily:'monospace',fontSize:11,color:C.ac,marginBottom:6,fontWeight:700}},'GOOGLE SHEETS'),
+        h('div',{style:{background:C.ac+'10',border:'1px solid '+C.ac+'30',borderRadius:6,padding:'7px 10px',marginBottom:12,fontSize:10,color:C.t2}},
+          '🔗 Esta URL es compartida — todos los usuarios de la app usarán este script automáticamente al ingresar.'
+        ),
+        h(Inp,{label:'URL del script /exec',value:p.cfg.scriptUrl,onChange:function(v){var url=v.trim();setGUrl(url);p.setCfg(function(prev){return Object.assign({},prev,{scriptUrl:url})})},placeholder:'https://script.google.com/macros/s/.../exec'}),
         h('div',{style:{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap'}},
           h(Btn,{onClick:function(){p.load(p.cfg.scriptUrl)},disabled:p.syncing||!p.cfg.scriptUrl,color:C.g},p.syncing?'Cargando...':'Cargar desde Sheets'),
           h(Btn,{onClick:p.mSync,disabled:p.syncing||!p.cfg.scriptUrl,color:C.ac},'Subir a Sheets')
@@ -1088,7 +1095,7 @@ function App(){
   var _tl=useState(cache.tLogs||[]);var tLogs=_tl[0],setTLogs=_tl[1];
   var _hi=useState(cache.history&&cache.history.length?cache.history:DEF_H);var history=_hi[0],setHistory=_hi[1];
   var _al=useState([]);var alarms=_al[0],setAlarms=_al[1];
-  var _cf=useState(Object.assign({scriptUrl:'',ntfyTopic:''},cfg));var config=_cf[0],setConfig=_cf[1];
+  var _cf=useState(Object.assign({scriptUrl:getGUrl(),ntfyTopic:''},cfg));var config=_cf[0],setConfig=_cf[1];
   var _em=useState('admin@planta.com');var email=_em[0],setEmail=_em[1];
   var _pw=useState('admin123');var pass=_pw[0],setPass=_pw[1];
   var _er=useState('');var err=_er[0],setErr=_er[1];
@@ -1114,7 +1121,7 @@ function App(){
   var coR=useRef(coches),tuR=useRef(tunnels),cfR=useRef(config),hiR=useRef(history),tlR=useRef(tLogs),alR=useRef(alarms),stR=useRef(null);
   useEffect(function(){coR.current=coches},[coches]);
   useEffect(function(){tuR.current=tunnels},[tunnels]);
-  useEffect(function(){cfR.current=config;scfg(config)},[config]);
+  useEffect(function(){cfR.current=config;scfg(config);if(config.scriptUrl)setGUrl(config.scriptUrl)},[config]);
   useEffect(function(){hiR.current=history},[history]);
   useEffect(function(){tlR.current=tLogs;sc({coches:coR.current,tunnels:tuR.current,history:hiR.current,tLogs:tLogs})},[tLogs]);
   useEffect(function(){alR.current=alarms},[alarms]);
@@ -1311,11 +1318,21 @@ function App(){
         err&&h('div',{style:{color:C.d,fontSize:11,marginBottom:10,padding:'6px 10px',background:C.d+'12',borderRadius:5}},err),
         h('button',{type:'submit',style:{width:'100%',background:C.ac,color:'#000',border:'none',padding:12,borderRadius:8,fontSize:14,fontWeight:700,cursor:'pointer',marginBottom:12}},'INGRESAR')
       ),
-      h('div',{style:{marginTop:8,background:C.s3,border:'1px solid '+C.b,borderRadius:8,padding:12}},
-        h('div',{style:{fontSize:9,color:C.ac,fontWeight:700,marginBottom:6,textTransform:'uppercase',letterSpacing:.8}},'⚙ Google Apps Script URL'),
-        h('input',{value:config.scriptUrl,onChange:function(e){setConfig(function(prev){return Object.assign({},prev,{scriptUrl:e.target.value.trim()})})},placeholder:'https://script.google.com/macros/s/.../exec',style:{width:'100%',background:C.s1,border:'1px solid '+(config.scriptUrl?C.g:C.b),borderRadius:6,padding:'7px 10px',color:C.t,fontSize:10,marginBottom:4}}),
-        config.scriptUrl?h('div',{style:{fontSize:9,color:C.g}},'✅ Sincronización activa'):h('div',{style:{fontSize:9,color:C.m}},'Sin URL: modo local')
-      ),
+      config.scriptUrl
+        ? h('div',{style:{marginTop:8,background:C.g+'10',border:'1px solid '+C.g+'30',borderRadius:8,padding:'8px 12px',display:'flex',alignItems:'center',gap:8}},
+            h('span',{style:{fontSize:16}},'✅'),
+            h('div',null,
+              h('div',{style:{fontSize:11,color:C.g,fontWeight:700}},'Conectado a Google Sheets'),
+              h('div',{style:{fontSize:9,color:C.m}},'Los datos se sincronizan automáticamente')
+            )
+          )
+        : h('div',{style:{marginTop:8,background:C.s3,border:'1px solid '+C.b,borderRadius:8,padding:'8px 12px',display:'flex',alignItems:'center',gap:8}},
+            h('span',{style:{fontSize:16}},'⚠️'),
+            h('div',null,
+              h('div',{style:{fontSize:11,color:C.m,fontWeight:600}},'Sin conexión a Sheets'),
+              h('div',{style:{fontSize:9,color:C.m}},'Pide al administrador que configure el script')
+            )
+          ),
       h('div',{style:{marginTop:8,display:'flex',flexDirection:'column',gap:6}},
         typeof Notification!=='undefined'&&notif!=='granted'&&h('button',{onClick:function(){Notification.requestPermission().then(function(p){setNotif(p);if(p==='granted')new Notification('FREEZE CONTROL',{body:'✅ Recibirás alertas de túneles como notificaciones',icon:'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Ctext y=%2256%22 font-size=%2260%22%3E❄%3C/text%3E%3C/svg%3E'})})},style:{width:'100%',background:C.w+'15',border:'1px solid '+C.w+'50',color:C.w,padding:'10px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',gap:6}},'🔔 Activar notificaciones push'),
         notif==='granted'&&h('div',{style:{textAlign:'center',fontSize:11,color:C.g,padding:4}},'🔔 Notificaciones activas — recibirás alertas como WhatsApp'),
