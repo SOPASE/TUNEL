@@ -474,166 +474,290 @@ function VDashboard(p){
 function VTemps(p){
   var _sel=useState(p.tunnels[0]&&p.tunnels[0].id);var sel=_sel[0],setSel=_sel[1];
   var _showF=useState(false);var showF=_showF[0],setShowF=_showF[1];
-  // Rol automatico basado en el usuario — 'camara' si su cargo lo indica, de lo contrario 'operador'
-  var role=p.userRole==='supervisor'||p.userRole==='admin'||(p.userCargo&&p.userCargo.toLowerCase().indexOf('camara')>-1)?'camara':'operador';
+  var role=(p.userRole==='supervisor'||p.userRole==='admin'||(p.userCargo&&p.userCargo.toLowerCase().indexOf('camara')>-1))?'camara':'operador';
   var _tf=useState({airTemp:'',prodTemp:'',estado:'normal',notes:''});var tf=_tf[0],setTf=_tf[1];
   function uf(k,v){setTf(function(prev){var o=Object.assign({},prev);o[k]=v;return o})}
   var actT=p.tunnels.find(function(t){return t.id===sel})||p.tunnels[0];
   var logs=p.tLogs.filter(function(l){return l.tunnelId===(actT&&actT.id)}).slice().sort(function(a,b){return b.timestamp-a.timestamp});
   var inT=p.coches.filter(function(c){return c.tunnelId===(actT&&actT.id)&&c.status==='en-tunel'});
-  // Metricas del tunel
   var lbsT=inT.reduce(function(a,c){return a+(c.totalLbs||0)},0);
   var lastLog=logs[0];
   var lastAir=lastLog?(lastLog.airTemp!=null?lastLog.airTemp:lastLog.temp):null;
   var lastProd=lastLog?lastLog.prodTemp:null;
   var alertaActiva=logs.length>0&&(lastLog.estado==='falla'||(lastAir!=null&&actT&&Math.abs(lastAir-actT.targetTemp)>8&&lastLog.estado!=='defrost'));
-  var ESTS=[{v:'normal',l:'Normal',c:C.g},{v:'defrost',l:'Defrost',c:C.w},{v:'falla',l:'Falla',c:C.d},{v:'recuperacion',l:'Recuperacion',c:'#aa88ff'},{v:'listo',l:'Listo',c:'#00e888'}];
+  var ESTS=[{v:'normal',l:'Normal ✓',c:C.g},{v:'defrost',l:'Defrost ↻',c:C.w},{v:'falla',l:'Falla !',c:C.d},{v:'recuperacion',l:'Recup ↓',c:'#aa88ff'},{v:'listo',l:'Listo ★',c:'#00e888'}];
   var EC={normal:C.g,defrost:C.w,falla:C.d,recuperacion:'#aa88ff',listo:'#00e888'};
   var EI={normal:'✓',defrost:'↻',falla:'!',recuperacion:'↓',listo:'★'};
-  var aD=tf.airTemp&&actT?Math.abs(+tf.airTemp-actT.targetTemp):null,aC=aD===null?C.t2:aD<=2?C.g:aD<=5?C.w:C.d;
-  var pD=tf.prodTemp&&actT?Math.abs(+tf.prodTemp-actT.targetTemp):null,pC=pD===null?C.t2:actT&&+tf.prodTemp<=actT.targetTemp+1?C.g:pD<=3?C.w:C.t2;
-  function saveT(){if(!tf.airTemp&&!tf.prodTemp)return;var log={id:gid(),tunnelId:actT.id,tunnelName:actT.name,tunnelType:actT.type,airTemp:tf.airTemp!==''?+tf.airTemp:null,prodTemp:tf.prodTemp!==''?+tf.prodTemp:null,temp:tf.airTemp!==''?+tf.airTemp:(tf.prodTemp!==''?+tf.prodTemp:0),targetTemp:actT.targetTemp,estado:tf.estado,notes:tf.notes,userName:p.user||'Operador',userCargo:p.userCargo||p.userRole||'',rol:p.userRole||role,timestamp:Date.now()};p.onSave(log);setTf({airTemp:'',prodTemp:'',estado:'normal',notes:''});setShowF(false)}
-  return h('div',{className:'temp-grid',style:{display:'flex',flexDirection:'column',height:'calc(100vh - 90px)'}},
-    // Header metricas del tunel activo
-    actT&&h('div',{style:{background:C.s1,borderBottom:'1px solid '+C.b,padding:'10px 14px',display:'flex',gap:12,alignItems:'center',flexWrap:'wrap',flexShrink:0}},
-      h('div',{style:{fontFamily:'monospace',fontWeight:700,fontSize:13,color:actT.color}},actT.name),
-      h('div',{style:{display:'flex',gap:8,flexWrap:'wrap',flex:1}},
-        [['Objetivo',actT.targetTemp+'C',C.ac],
-         ['Lbs en tunel',lbsT.toLocaleString()+' lbs',C.g],
-         ['Coches',inT.length+'/'+actT.capacityCoches,C.w],
-         ['Ultimo Aire',lastAir!=null?lastAir+'C':'—',lastAir!=null&&actT&&Math.abs(lastAir-actT.targetTemp)<=2?C.g:C.w],
-         ['Ultimo Prod',lastProd!=null?lastProd+'C':'—',lastProd!=null&&actT&&lastProd<=actT.targetTemp+1?C.g:C.t2],
-         ['Registros',logs.length,C.m]]
-        .map(function(row){return h('div',{key:row[0],style:{background:C.s3,borderRadius:6,padding:'5px 10px',textAlign:'center'}},
-          h('div',{style:{fontSize:8,color:C.m,marginBottom:2}},row[0]),
-          h('div',{style:{fontFamily:'monospace',fontSize:13,fontWeight:700,color:row[2]}},String(row[1]))
-        )})
-      ),
-      alertaActiva&&h('div',{style:{background:C.d+'18',border:'1px solid '+C.d,borderRadius:6,padding:'5px 10px',fontSize:11,color:C.d,fontWeight:600}},'⚠ ALERTA ACTIVA'),
-      h(Btn,{onClick:function(){setShowF(function(prev){return !prev})},color:showF?C.m:C.ac},showF?'✕ Cancelar':'+ Nuevo Registro')
-    ),
-    h('div',{className:'temp-layout',style:{display:'flex',flex:1,overflow:'hidden'}},
-      // Panel izquierdo - selector tuneles
-      h('div',{className:'temp-sidebar',style:{width:200,background:C.s1,borderRight:'1px solid '+C.b,padding:10,overflowY:'auto',flexShrink:0}},
-        h('div',{style:{fontSize:9,color:C.m,marginBottom:8,letterSpacing:.5,fontWeight:700,textTransform:'uppercase'}},'Tuneles'),
-        p.tunnels.map(function(t){
-          var lg=p.tLogs.filter(function(l){return l.tunnelId===t.id}).slice().sort(function(a,b){return b.timestamp-a.timestamp});
-          var last=lg[0],lA=last?(last.airTemp!=null?last.airTemp:last.temp):null,lP=last?last.prodTemp:null;
-          var dA=lA!=null&&t.targetTemp?Math.abs(lA-t.targetTemp):null,dC=dA===null?C.m:dA<=2?C.g:dA<=5?C.w:C.d;
-          var inTc=p.coches.filter(function(c){return c.tunnelId===t.id&&c.status==='en-tunel'}).length;
-          var lbsTc=p.coches.filter(function(c){return c.tunnelId===t.id&&c.status==='en-tunel'}).reduce(function(a,c){return a+(c.totalLbs||0)},0);
-          var act=sel===t.id;
-          var hasAlert=lg.length>0&&(lg[0].estado==='falla'||(lA!=null&&Math.abs(lA-t.targetTemp)>8&&lg[0].estado!=='defrost'));
-          return h('button',{key:t.id,onClick:function(){setSel(t.id)},
-            style:{width:'100%',background:act?t.color+'18':C.s3,border:'2px solid '+(act?t.color:hasAlert?C.d+'80':C.b),borderRadius:10,padding:10,cursor:'pointer',marginBottom:6,textAlign:'left',transition:'all .15s'}},
-            h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}},
-              h('span',{style:{fontFamily:'monospace',fontWeight:700,fontSize:10,color:act?t.color:C.t}},t.name.split(' ').slice(-2).join(' ')),
-              hasAlert?h('span',{style:{color:C.d,fontSize:12}},'⚠'):h('span',{style:{color:C.m,fontSize:10}},lg.length+' reg')
-            ),
-            h('div',{style:{display:'flex',gap:8}},
-              h('div',null,h('div',{style:{fontSize:8,color:C.m}},'AIRE'),h('div',{style:{fontFamily:'monospace',fontSize:15,color:dC,fontWeight:700}},lA!=null?lA+'C':'—')),
-              h('div',null,h('div',{style:{fontSize:8,color:C.m}},'PROD'),h('div',{style:{fontFamily:'monospace',fontSize:15,color:lP!=null?C.g:C.m,fontWeight:700}},lP!=null?lP+'C':'—')),
-              h('div',{style:{marginLeft:'auto',textAlign:'right'}},h('div',{style:{fontSize:8,color:C.m}},'COCHES'),h('div',{style:{fontFamily:'monospace',fontSize:13,color:inTc>0?C.w:C.m}},inTc))
-            ),
-            lbsTc>0&&h('div',{style:{fontSize:9,color:C.g,marginTop:3,fontFamily:'monospace'}},lbsTc.toLocaleString()+' lbs'),
-            lg.length>=2&&h('div',{style:{marginTop:5,paddingTop:5,borderTop:'1px solid '+C.b+'50'}},
-              h(Sparkline,{
-                data:lg.slice(0,8).reverse().map(function(l){return l.airTemp!=null?l.airTemp:(l.prodTemp!=null?l.prodTemp:null)}).filter(function(v){return v!==null}),
-                w:108,h:28,
-                color:dC
-              })
-            )
-          );
-        })
-      ),
-      // Panel derecho - timeline
-      h('div',{style:{flex:1,overflowY:'auto',padding:14,display:'flex',flexDirection:'column',gap:10}},
-        // Coches activos
-        inT.length>0&&h('div',{style:{background:C.s1,border:'1px solid '+(actT?actT.color+'30':'#333'),borderRadius:8,padding:10}},
-          h('div',{style:{fontSize:9,color:C.m,marginBottom:6,textTransform:'uppercase',fontWeight:700}},'Coches activos en este tunel'),
-          h('div',{style:{display:'flex',flexWrap:'wrap',gap:6}},inT.map(function(c){var el=p.now-c.entryTime,tc2=tcol(el,actT&&actT.targetTimeHours);return h('div',{key:c.id,style:{background:C.s3,borderRadius:6,padding:'6px 10px',border:'1px solid '+tc2+'40'}},h('div',{style:{fontFamily:'monospace',fontWeight:700,fontSize:11,color:C.t}},'#'+c.number),h('div',{style:{fontSize:9,color:C.t2}},c.productName+' '+(c.units||0)+(c.unitType==='funda'?'f':'c')),h('div',{style:{fontSize:10,color:C.g}},'⚖ '+(c.totalLbs||0).toLocaleString()+' lbs'),h('div',{style:{fontFamily:'monospace',fontSize:10,color:tc2}},elp(el)),h('div',{style:{background:C.s2,borderRadius:2,height:3,marginTop:3}},h('div',{style:{background:tc2,borderRadius:2,height:'100%',width:Math.min(100,pct(el,(actT?actT.targetTimeHours:1)*3600000))+'%'}})));}))
+  var aD=tf.airTemp&&actT?Math.abs(+tf.airTemp-actT.targetTemp):null;
+  var aC=aD===null?C.t2:aD<=2?C.g:aD<=5?C.w:C.d;
+  var pD=tf.prodTemp&&actT?Math.abs(+tf.prodTemp-actT.targetTemp):null;
+  var pC=pD===null?C.t2:actT&&+tf.prodTemp<=actT.targetTemp+1?C.g:pD<=3?C.w:C.t2;
+
+  function saveT(){
+    if(!tf.airTemp&&!tf.prodTemp)return;
+    var log={id:gid(),tunnelId:actT.id,tunnelName:actT.name,tunnelType:actT.type,
+      airTemp:tf.airTemp!==''?+tf.airTemp:null,prodTemp:tf.prodTemp!==''?+tf.prodTemp:null,
+      temp:tf.airTemp!==''?+tf.airTemp:(tf.prodTemp!==''?+tf.prodTemp:0),
+      targetTemp:actT.targetTemp,estado:tf.estado,notes:tf.notes,
+      userName:p.user||'Operador',userCargo:p.userCargo||p.userRole||'',
+      rol:p.userRole||role,timestamp:Date.now()};
+    p.onSave(log);
+    setTf({airTemp:'',prodTemp:'',estado:'normal',notes:''});
+    setShowF(false);
+  }
+
+  // ── MODAL EMERGENTE DE NUEVO REGISTRO ──────────────────────────
+  var modalForm = showF&&actT&&h('div',{className:'fade',
+    style:{position:'fixed',inset:0,background:'#000d',zIndex:900,display:'flex',alignItems:'flex-end',justifyContent:'center'},
+    onClick:function(e){if(e.target===e.currentTarget)setShowF(false)}},
+    h('div',{style:{background:C.s1,border:'2px solid '+actT.color,borderRadius:'16px 16px 0 0',padding:'20px 16px',width:'100%',maxWidth:520,maxHeight:'90vh',overflowY:'auto',boxShadow:'0 -8px 32px #000a'}},
+      // Handle bar
+      h('div',{style:{width:40,height:4,background:C.b,borderRadius:2,margin:'0 auto 16px',flexShrink:0}}),
+      // Titulo
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}},
+        h('div',null,
+          h('div',{style:{fontFamily:'monospace',fontSize:12,color:actT.color,fontWeight:700}},'NUEVO REGISTRO'),
+          h('div',{style:{fontSize:11,color:C.t2}},actT.name)
         ),
-        // Formulario nuevo registro
-        showF&&actT&&h('div',{className:'fade',style:{background:C.s1,border:'2px solid '+actT.color,borderRadius:10,padding:14}},
-          h('div',{style:{fontFamily:'monospace',fontSize:10,color:actT.color,marginBottom:10,fontWeight:700}},'NUEVO REGISTRO — '+actT.name),
-          // Rol automatico — mostrar badge informativo
-          h('div',{style:{display:'flex',gap:8,alignItems:'center',marginBottom:12,padding:'8px 12px',background:role==='camara'?C.g+'12':C.ac+'12',borderRadius:8,border:'1px solid '+(role==='camara'?C.g+'40':C.ac+'40')}},
-            h('div',{style:{fontSize:18}},role==='camara'?'🧊':'👷'),
-            h('div',null,
-              h('div',{style:{fontSize:11,fontWeight:700,color:role==='camara'?C.g:C.ac}},role==='camara'?'Personal de Camara':'Operador'),
-              h('div',{style:{fontSize:9,color:C.m}},p.userCargo||p.user||''),
-              h('div',{style:{fontSize:9,color:C.m}},role==='camara'?'Puedes registrar temperatura de aire y/o producto':'Control de temperatura del aire y/o producto')
-            )
-          ),
-          h('div',{style:{display:'flex',flexWrap:'wrap',gap:5,marginBottom:12}},ESTS.map(function(e){return h('button',{key:e.v,onClick:function(){uf('estado',e.v)},style:{padding:'5px 10px',borderRadius:6,border:'1px solid '+(tf.estado===e.v?e.c:C.b),background:tf.estado===e.v?e.c+'18':C.s3,color:tf.estado===e.v?e.c:C.t2,cursor:'pointer',fontSize:11}},e.l)})),
-          h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}},
-            h('div',null,
-              h('div',{style:{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase'}},'Temp AIRE (C)'),
-              h('input',{type:'number',value:tf.airTemp,onChange:function(e){uf('airTemp',e.target.value)},placeholder:actT?String(actT.targetTemp):'',style:{width:'100%',background:C.s3,border:'1px solid '+(tf.airTemp?aC:C.b),borderRadius:6,padding:'10px 10px',color:C.t,fontSize:18,fontFamily:'monospace'}}),
-              tf.airTemp&&h('div',{style:{fontSize:10,color:aC,marginTop:2}},aD<=2?'✅ Correcto':aD<=5?'⚠ Desv. '+aD+'C':tf.estado==='defrost'?'🔄 Defrost '+aD+'C':'🔴 CRITICO '+aD+'C')
-            ),
-            h('div',null,
-              h('div',{style:{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase'}},'Temp PRODUCTO (C) — Opcional'),
-              h('input',{type:'number',value:tf.prodTemp,onChange:function(e){uf('prodTemp',e.target.value)},placeholder:actT?String(actT.targetTemp):'',style:{width:'100%',background:C.s3,border:'2px solid '+(tf.prodTemp?pC:C.b),borderRadius:6,padding:'10px 10px',color:C.t,fontSize:18,fontFamily:'monospace'}}),
-              tf.prodTemp!==''&&h('div',{style:{fontSize:10,color:pC,marginTop:2}},actT&&+tf.prodTemp<=actT.targetTemp+1?'✅ Producto listo!':pD<=3?'⚠ Casi listo':'❄ En proceso Δ'+pD+'C')
-            )
-          ),
-          h(Inp,{label:'Observaciones',value:tf.notes,onChange:function(v){uf('notes',v)},placeholder:'Defrost iniciado, ajuste compresor, todo normal...',rows:2}),
-          h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
-            h('div',{style:{fontSize:9,color:C.m}},role==='operador'?'👷 Operador: ':'🧊 Personal Camara: '+(p.user||'')+'  ·  '+new Date().toLocaleTimeString('es-EC')),
-            h('div',{style:{display:'flex',gap:6}},h(Btn,{onClick:function(){setShowF(false)},color:C.m},'Cancelar'),h(Btn,{onClick:saveT,disabled:!tf.airTemp&&!tf.prodTemp,color:actT?actT.color:C.ac},'💾 Guardar'))
-          )
+        h('button',{onClick:function(){setShowF(false)},style:{background:'none',border:'none',color:C.m,fontSize:22,cursor:'pointer',lineHeight:1}},'✕')
+      ),
+      // Badge usuario
+      h('div',{style:{display:'flex',gap:8,alignItems:'center',marginBottom:14,padding:'8px 12px',background:role==='camara'?C.g+'12':C.ac+'12',borderRadius:8,border:'1px solid '+(role==='camara'?C.g+'40':C.ac+'40')}},
+        h('div',{style:{fontSize:20}},role==='camara'?'🧊':'👷'),
+        h('div',null,
+          h('div',{style:{fontSize:11,fontWeight:700,color:role==='camara'?C.g:C.ac}},p.user||'Operador'),
+          h('div',{style:{fontSize:9,color:C.m}},p.userCargo||'')
         ),
-        // Timeline
-        logs.length>0&&h('div',{style:{fontFamily:'monospace',fontSize:9,color:C.m,letterSpacing:.5,fontWeight:700}},logs.length+' REGISTROS — '+actT.name),
-        logs.map(function(l,i){
-          var ec2=EC[l.estado]||C.g,ei2=EI[l.estado]||'✓';
-          var aD2=l.airTemp!=null&&l.targetTemp?Math.abs(l.airTemp-l.targetTemp):null;
-          var pD2=l.prodTemp!=null&&l.targetTemp?Math.abs(l.prodTemp-l.targetTemp):null;
-          var isAlerta=l.estado==='falla'||(aD2!=null&&aD2>8&&l.estado!=='defrost');
-          return h('div',{key:l.id,style:{display:'flex',gap:10}},
-            h('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',flexShrink:0}},
-              h('div',{style:{width:30,height:30,borderRadius:'50%',background:ec2+'20',border:'2px solid '+ec2,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,color:ec2,fontWeight:700,boxShadow:i===0?'0 0 8px '+ec2+'50':'none'}},ei2),
-              i<logs.length-1&&h('div',{style:{width:2,flex:1,minHeight:20,background:C.b,margin:'3px 0'}})
-            ),
-            h('div',{className:'fade',style:{background:C.s1,border:'1px solid '+(i===0?ec2+'50':isAlerta?C.d+'30':C.b),borderRadius:8,padding:'10px 12px',marginBottom:8,flex:1,boxShadow:isAlerta&&i===0?'0 0 8px '+C.d+'20':'none'}},
-              h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:6}},
-                h('div',{style:{display:'flex',gap:6,alignItems:'center',flexWrap:'wrap'}},
-                  h(Tag,{color:ec2},(ESTS.find(function(e){return e.v===l.estado})||{l:l.estado}).l),
-                  i===0&&h(Tag,{color:actT&&actT.color},'Ultimo'),
-                  l.rol==='camara'&&h(Tag,{color:C.g},'Camara'),
-                  isAlerta&&h(Tag,{color:C.d},'ALERTA')
-                ),
-                h('div',{style:{textAlign:'right'}},h('div',{style:{fontSize:10,color:C.t2}},fmtT(l.timestamp)),h('div',{style:{fontSize:9,color:C.m}},new Date(l.timestamp).toLocaleDateString('es-EC')))
-              ),
-              h('div',{style:{display:'flex',gap:10,flexWrap:'wrap',marginBottom:l.notes?6:0}},
-                l.airTemp!=null&&h('div',{style:{background:C.s3,borderRadius:6,padding:'5px 10px',minWidth:90}},
-                  h('div',{style:{fontSize:8,color:C.m,marginBottom:1}},'AIRE'),
-                  h('div',{style:{fontFamily:'monospace',fontSize:20,fontWeight:700,color:aD2<=2?C.g:aD2<=5?C.w:l.estado==='defrost'?C.w:C.d}},l.airTemp+'C'),
-                  aD2!=null&&h('div',{style:{fontSize:9,color:C.m}},'Δ'+aD2+'C')
-                ),
-                l.prodTemp!=null&&h('div',{style:{background:C.s3,borderRadius:6,padding:'5px 10px',minWidth:90,border:'1px solid '+C.g+'30'}},
-                  h('div',{style:{fontSize:8,color:C.g,marginBottom:1,fontWeight:700}},'PRODUCTO 🧊'),
-                  h('div',{style:{fontFamily:'monospace',fontSize:20,fontWeight:700,color:l.targetTemp&&l.prodTemp<=l.targetTemp+1?C.g:pD2<=3?C.w:C.t2}},l.prodTemp+'C'),
-                  pD2!=null&&h('div',{style:{fontSize:9,color:C.m}},'Δ'+pD2+'C')
-                ),
-                h('div',{style:{marginLeft:'auto',alignSelf:'flex-end',textAlign:'right'}},
-                  h('div',{style:{fontSize:11,color:C.t2,fontWeight:600}},l.userName||''),
-                  l.userCargo&&h('div',{style:{fontSize:9,color:C.m}},l.userCargo),
-                  l.rol&&h('div',{style:{fontSize:9,color:l.rol==='camara'?C.g:C.ac}},l.rol==='camara'?'🧊 Personal Cámara':'👷 Operador')
-                )
-              ),
-              l.notes&&h('div',{style:{fontSize:10,color:C.t2,padding:'5px 8px',background:C.s3,borderRadius:5,borderLeft:'3px solid '+ec2}},l.notes)
-            )
-          );
-        }),
-        !logs.length&&h('div',{style:{textAlign:'center',padding:40,color:C.m}},
-          h('div',{style:{fontSize:32,marginBottom:10}},'🌡'),
-          h('div',{style:{fontSize:13,marginBottom:6}},'Sin registros de temperatura'),
-          h('div',{style:{fontSize:11}},'Usa "+ Nuevo Registro" para iniciar el seguimiento')
+        h('div',{style:{marginLeft:'auto',fontSize:10,color:C.m}},new Date().toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'}))
+      ),
+      // Estados
+      h('div',{style:{marginBottom:14}},
+        h('div',{style:{fontSize:9,color:C.m,marginBottom:6,textTransform:'uppercase',letterSpacing:.8}},'Estado del túnel'),
+        h('div',{style:{display:'flex',flexWrap:'wrap',gap:6}},
+          ESTS.map(function(e){return h('button',{key:e.v,onClick:function(){uf('estado',e.v)},
+            style:{flex:'1 0 auto',padding:'7px 10px',borderRadius:8,border:'2px solid '+(tf.estado===e.v?e.c:C.b),
+              background:tf.estado===e.v?e.c+'22':C.s3,color:tf.estado===e.v?e.c:C.t2,
+              cursor:'pointer',fontSize:11,fontWeight:tf.estado===e.v?700:400,transition:'all .1s'}},e.l)})
         )
+      ),
+      // Temperaturas — campos grandes para móvil
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}},
+        h('div',{style:{background:C.s3,borderRadius:10,padding:12,border:'2px solid '+(tf.airTemp?aC:C.b),transition:'border-color .2s'}},
+          h('div',{style:{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase',letterSpacing:.8}},'❄ Aire (°C)'),
+          h('input',{type:'number',inputMode:'decimal',value:tf.airTemp,
+            onChange:function(e){uf('airTemp',e.target.value)},
+            placeholder:actT?String(actT.targetTemp):'',
+            style:{width:'100%',background:'none',border:'none',outline:'none',color:tf.airTemp?aC:C.t,
+              fontSize:28,fontFamily:'monospace',fontWeight:700,padding:0}}),
+          tf.airTemp&&h('div',{style:{fontSize:10,color:aC,marginTop:4}},
+            aD<=2?'✅ OK':aD<=5?'⚠ Δ'+aD+'C':tf.estado==='defrost'?'🔄 Defrost':'🔴 CRÍTICO Δ'+aD+'C')
+        ),
+        h('div',{style:{background:C.s3,borderRadius:10,padding:12,border:'2px solid '+(tf.prodTemp?pC:C.b),transition:'border-color .2s'}},
+          h('div',{style:{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase',letterSpacing:.8}},'🧊 Producto (°C)'),
+          h('input',{type:'number',inputMode:'decimal',value:tf.prodTemp,
+            onChange:function(e){uf('prodTemp',e.target.value)},
+            placeholder:actT?String(actT.targetTemp):'',
+            style:{width:'100%',background:'none',border:'none',outline:'none',color:tf.prodTemp?pC:C.t,
+              fontSize:28,fontFamily:'monospace',fontWeight:700,padding:0}}),
+          tf.prodTemp!==''
+            ?h('div',{style:{fontSize:10,color:pC,marginTop:4}},actT&&+tf.prodTemp<=actT.targetTemp+1?'✅ Producto listo!':pD<=3?'⚠ Casi listo':'❄ Δ'+pD+'C')
+            :h('div',{style:{fontSize:9,color:C.m,marginTop:4}},'Opcional')
+        )
+      ),
+      // Observaciones
+      h('textarea',{value:tf.notes,onChange:function(e){uf('notes',e.target.value)},
+        placeholder:'Observaciones: defrost iniciado, ajuste compresor, todo normal...',
+        rows:2,
+        style:{width:'100%',background:C.s3,border:'1px solid '+C.b,borderRadius:8,
+          padding:'10px 12px',color:C.t,fontSize:12,resize:'none',marginBottom:14,display:'block'}}),
+      // Botones de acción
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 2fr',gap:8}},
+        h('button',{onClick:function(){setShowF(false)},
+          style:{background:C.s3,border:'1px solid '+C.b,color:C.t2,padding:14,borderRadius:10,
+            cursor:'pointer',fontSize:13,fontWeight:600}},'Cancelar'),
+        h('button',{onClick:saveT,disabled:!tf.airTemp&&!tf.prodTemp,
+          style:{background:(!tf.airTemp&&!tf.prodTemp)?C.s2:actT.color,
+            border:'none',color:(!tf.airTemp&&!tf.prodTemp)?C.m:'#000',
+            padding:14,borderRadius:10,cursor:(!tf.airTemp&&!tf.prodTemp)?'not-allowed':'pointer',
+            fontSize:14,fontWeight:700,opacity:(!tf.airTemp&&!tf.prodTemp)?.5:1}},'💾 Guardar Registro')
       )
     )
+  );
+
+  // ── TARJETAS DE TÚNELES — grid en móvil ───────────────────────
+  var tunnelCards = h('div',{style:{padding:'10px 10px 0'}},
+    h('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:8}},
+      p.tunnels.map(function(t){
+        var lg=p.tLogs.filter(function(l){return l.tunnelId===t.id}).slice().sort(function(a,b){return b.timestamp-a.timestamp});
+        var last=lg[0];
+        var lA=last?(last.airTemp!=null?last.airTemp:last.temp):null;
+        var lP=last?last.prodTemp:null;
+        var dA=lA!=null&&t.targetTemp?Math.abs(lA-t.targetTemp):null;
+        var dC=dA===null?C.m:dA<=2?C.g:dA<=5?C.w:C.d;
+        var inTc=p.coches.filter(function(c){return c.tunnelId===t.id&&c.status==='en-tunel'}).length;
+        var lbsTc=p.coches.filter(function(c){return c.tunnelId===t.id&&c.status==='en-tunel'}).reduce(function(a,c){return a+(c.totalLbs||0)},0);
+        var act=sel===t.id;
+        var hasAlert=lg.length>0&&(lg[0].estado==='falla'||(lA!=null&&Math.abs(lA-t.targetTemp)>8&&lg[0].estado!=='defrost'));
+        return h('button',{key:t.id,onClick:function(){setSel(t.id)},
+          style:{background:act?t.color+'18':C.s1,
+            border:'2px solid '+(act?t.color:hasAlert?C.d:C.b),
+            borderRadius:12,padding:10,cursor:'pointer',textAlign:'left',
+            transition:'all .15s',position:'relative'}},
+          hasAlert&&h('div',{style:{position:'absolute',top:6,right:8,fontSize:14}},'⚠'),
+          h('div',{style:{fontFamily:'monospace',fontWeight:700,fontSize:10,color:act?t.color:C.t,marginBottom:6,paddingRight:20}},
+            t.name.replace('Túnel ','').replace('Tunel ','')),
+          // Temp grande
+          h('div',{style:{display:'flex',gap:6,marginBottom:4}},
+            h('div',null,
+              h('div',{style:{fontSize:7,color:C.m}},'AIRE'),
+              h('div',{style:{fontFamily:'monospace',fontSize:18,color:dC,fontWeight:700,lineHeight:1}},lA!=null?lA+'°':'—')
+            ),
+            lP!=null&&h('div',null,
+              h('div',{style:{fontSize:7,color:C.g}},'PROD'),
+              h('div',{style:{fontFamily:'monospace',fontSize:18,color:lP<=t.targetTemp+2?C.g:C.t2,fontWeight:700,lineHeight:1}},lP+'°')
+            )
+          ),
+          // Barra capacidad
+          h('div',{style:{background:C.s2,borderRadius:2,height:3,marginBottom:4}},
+            h('div',{style:{background:t.color,borderRadius:2,height:'100%',width:Math.min(100,pct(inTc,t.capacityCoches))+'%',opacity:.8}})
+          ),
+          h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+            h('div',{style:{fontSize:8,color:inTc>0?C.w:C.m}},inTc+'/'+t.capacityCoches+' coches'),
+            lbsTc>0&&h('div',{style:{fontSize:7,color:C.g,fontFamily:'monospace'}},(lbsTc/1000).toFixed(1)+'k lbs')
+          ),
+          // Sparkline si hay datos
+          lg.length>=2&&h('div',{style:{marginTop:5,paddingTop:5,borderTop:'1px solid '+C.b+'40'}},
+            h(Sparkline,{
+              data:lg.slice(0,8).reverse().map(function(l2){return l2.airTemp!=null?l2.airTemp:(l2.prodTemp!=null?l2.prodTemp:null)}).filter(function(v){return v!==null}),
+              w:120,h:24,color:dC
+            })
+          )
+        );
+      })
+    )
+  );
+
+  // ── PANEL DETALLE DEL TÚNEL ACTIVO ────────────────────────────
+  var detailPanel = actT&&h('div',{style:{padding:'10px 10px 0'}},
+    // Header del tunel activo
+    h('div',{style:{background:C.s1,border:'1px solid '+actT.color+'40',borderRadius:10,padding:'10px 12px',marginBottom:8}},
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}},
+        h('div',null,
+          h('div',{style:{fontFamily:'monospace',fontWeight:700,fontSize:13,color:actT.color}},actT.name),
+          h('div',{style:{fontSize:9,color:C.m}},actT.targetTemp+'°C objetivo · '+actT.targetTimeHours+'h · '+inT.length+'/'+actT.capacityCoches+' coches')
+        ),
+        h('div',{style:{textAlign:'right'}},
+          alertaActiva&&h('div',{style:{background:C.d+'18',border:'1px solid '+C.d+'50',borderRadius:6,padding:'3px 8px',fontSize:10,color:C.d,fontWeight:700,marginBottom:4}},'⚠ ALERTA'),
+          h('div',{style:{fontFamily:'monospace',fontSize:11,color:C.g}},lbsT.toLocaleString()+' lbs')
+        )
+      ),
+      // Métricas en row
+      h('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:4}},
+        [['Objetivo',actT.targetTemp+'°C',C.ac],
+         ['Ult. Aire',lastAir!=null?lastAir+'°C':'—',lastAir!=null&&Math.abs(lastAir-actT.targetTemp)<=2?C.g:C.w],
+         ['Ult. Prod',lastProd!=null?lastProd+'°C':'—',lastProd!=null&&lastProd<=actT.targetTemp+2?C.g:C.t2],
+         ['Registros',String(logs.length),C.m]
+        ].map(function(row){return h('div',{key:row[0],style:{background:C.s3,borderRadius:6,padding:'5px 6px',textAlign:'center'}},
+          h('div',{style:{fontSize:7,color:C.m}},(row[0])),
+          h('div',{style:{fontFamily:'monospace',fontSize:12,fontWeight:700,color:row[2]}},row[1])
+        )})
+      )
+    ),
+    // Coches activos
+    inT.length>0&&h('div',{style:{background:C.s1,border:'1px solid '+actT.color+'30',borderRadius:10,padding:'8px 12px',marginBottom:8}},
+      h('div',{style:{fontSize:9,color:C.m,marginBottom:6,textTransform:'uppercase',fontWeight:700}},'Coches activos en este túnel'),
+      h('div',{style:{display:'flex',flexWrap:'wrap',gap:5}},
+        inT.map(function(c){
+          var el=p.now-c.entryTime,tc2=tcol(el,actT.targetTimeHours);
+          var prg=pct(el,actT.targetTimeHours*3600000);
+          return h('div',{key:c.id,style:{background:C.s3,borderRadius:8,padding:'7px 10px',border:'1px solid '+tc2+'50',minWidth:100}},
+            h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:2}},
+              h('span',{style:{fontFamily:'monospace',fontWeight:700,fontSize:12,color:C.t}},'#'+c.number),
+              h('span',{style:{fontFamily:'monospace',fontSize:10,color:tc2}},elp(el))
+            ),
+            c.lote&&h('div',{style:{fontSize:7,color:C.w,fontFamily:'monospace',marginBottom:2}},c.lote),
+            h('div',{style:{fontSize:9,color:C.t2,marginBottom:4}},c.productName+' · '+(c.totalLbs||0).toLocaleString()+' lbs'),
+            h('div',{style:{background:C.s2,borderRadius:2,height:3}},
+              h('div',{style:{background:tc2,borderRadius:2,height:'100%',width:prg+'%',transition:'width 1s'}}))
+          );
+        })
+      )
+    ),
+    // Timeline de registros
+    logs.length>0&&h('div',{style:{fontFamily:'monospace',fontSize:9,color:C.m,letterSpacing:.5,fontWeight:700,marginBottom:6}},logs.length+' REGISTROS'),
+    logs.map(function(l,i){
+      var ec2=EC[l.estado]||C.g,ei2=EI[l.estado]||'✓';
+      var aD2=l.airTemp!=null&&l.targetTemp?Math.abs(l.airTemp-l.targetTemp):null;
+      var pD2=l.prodTemp!=null&&l.targetTemp?Math.abs(l.prodTemp-l.targetTemp):null;
+      var isAlerta=l.estado==='falla'||(aD2!=null&&aD2>8&&l.estado!=='defrost');
+      return h('div',{key:l.id,style:{display:'flex',gap:8,marginBottom:6}},
+        h('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',flexShrink:0}},
+          h('div',{style:{width:28,height:28,borderRadius:'50%',background:ec2+'20',border:'2px solid '+ec2,
+            display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:ec2,fontWeight:700,
+            boxShadow:i===0?'0 0 6px '+ec2+'50':'none'}},ei2),
+          i<logs.length-1&&h('div',{style:{width:2,flex:1,minHeight:16,background:C.b,margin:'2px 0'}})
+        ),
+        h('div',{className:'fade',style:{background:C.s1,border:'1px solid '+(i===0?ec2+'50':isAlerta?C.d+'30':C.b),
+          borderRadius:8,padding:'8px 10px',flex:1,boxShadow:isAlerta&&i===0?'0 0 6px '+C.d+'20':'none',marginBottom:2}},
+          h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:6,flexWrap:'wrap',gap:4}},
+            h('div',{style:{display:'flex',gap:4,flexWrap:'wrap'}},
+              h(Tag,{color:ec2},(ESTS.find(function(e){return e.v===l.estado})||{l:l.estado}).l.split(' ')[0]),
+              i===0&&h(Tag,{color:actT.color},'Último'),
+              isAlerta&&h(Tag,{color:C.d},'ALERTA')
+            ),
+            h('div',{style:{fontSize:10,color:C.t2,fontFamily:'monospace'}},fmtT(l.timestamp))
+          ),
+          h('div',{style:{display:'flex',gap:8,marginBottom:l.notes?6:0,flexWrap:'wrap'}},
+            l.airTemp!=null&&h('div',{style:{background:C.s3,borderRadius:6,padding:'4px 8px',minWidth:70}},
+              h('div',{style:{fontSize:7,color:C.m}},'AIRE'),
+              h('div',{style:{fontFamily:'monospace',fontSize:18,fontWeight:700,
+                color:aD2<=2?C.g:aD2<=5?C.w:C.d}},l.airTemp+'°C'),
+              aD2!=null&&h('div',{style:{fontSize:8,color:C.m}},'Δ'+aD2+'C')
+            ),
+            l.prodTemp!=null&&h('div',{style:{background:C.s3,borderRadius:6,padding:'4px 8px',minWidth:70,border:'1px solid '+C.g+'30'}},
+              h('div',{style:{fontSize:7,color:C.g}},'PRODUCTO'),
+              h('div',{style:{fontFamily:'monospace',fontSize:18,fontWeight:700,
+                color:l.targetTemp&&l.prodTemp<=l.targetTemp+1?C.g:pD2<=3?C.w:C.t2}},l.prodTemp+'°C'),
+              pD2!=null&&h('div',{style:{fontSize:8,color:C.m}},'Δ'+pD2+'C')
+            ),
+            h('div',{style:{marginLeft:'auto',textAlign:'right',alignSelf:'flex-end'}},
+              h('div',{style:{fontSize:10,color:C.t2,fontWeight:600}},l.userName||''),
+              l.userCargo&&h('div',{style:{fontSize:8,color:C.m}},l.userCargo)
+            )
+          ),
+          l.notes&&h('div',{style:{fontSize:10,color:C.t2,padding:'4px 8px',background:C.s3,borderRadius:5,borderLeft:'3px solid '+ec2}},l.notes)
+        )
+      );
+    }),
+    !logs.length&&h('div',{style:{textAlign:'center',padding:'30px 20px',color:C.m}},
+      h('div',{style:{fontSize:28,marginBottom:8}},'🌡'),
+      h('div',{style:{fontSize:12,marginBottom:4}},'Sin registros'),
+      h('div',{style:{fontSize:10}},'Toca "+ Registrar Temperatura" para iniciar')
+    )
+  );
+
+  return h('div',{style:{display:'flex',flexDirection:'column',height:'calc(100vh - 90px)'}},
+    // FAB + botón flotante de nuevo registro
+    h('div',{style:{background:C.s1,borderBottom:'1px solid '+C.b,padding:'8px 12px',display:'flex',
+      justifyContent:'space-between',alignItems:'center',flexShrink:0}},
+      h('div',{style:{fontFamily:'monospace',fontSize:11,color:C.ac,fontWeight:700}},'TEMPERATURAS'),
+      h('button',{onClick:function(){setShowF(true)},
+        style:{background:actT?actT.color:C.ac,color:'#000',border:'none',
+          borderRadius:20,padding:'8px 18px',cursor:'pointer',fontSize:12,
+          fontWeight:700,display:'flex',alignItems:'center',gap:6,
+          boxShadow:'0 2px 8px '+(actT?actT.color:C.ac)+'50'}},
+        h('span',{style:{fontSize:14}},'🌡'),
+        h('span',null,'Registrar Temperatura')
+      )
+    ),
+    // Scroll contenido
+    h('div',{style:{flex:1,overflowY:'auto',paddingBottom:16}},
+      tunnelCards,
+      h('div',{style:{height:1,background:C.b,margin:'10px 10px'}}),
+      detailPanel
+    ),
+    // Modal emergente
+    modalForm
   );
 }
 
