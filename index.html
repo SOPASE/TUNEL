@@ -58,12 +58,40 @@ input,select,textarea,button{font-family:inherit}
 // ═══════════════════════════════════════════════════════
 var R=React,h=R.createElement,useState=R.useState,useEffect=R.useEffect,useRef=R.useRef;
 
-// ── COLORES ─────────────────────────────────────────────
-var C={s1:'#0b1525',s2:'#0f1e38',s3:'#152545',b:'#1a3557',ac:'#00c8ff',g:'#00e888',w:'#ffaa00',d:'#ff3366',t:'#c8e0f4',m:'#3d6b8a',t2:'#7a9ab8'};
+
+// ══════════════════════════════════════════════════════════
+// ▼▼▼  CONFIGURACIÓN DIRECTA — edita aquí una sola vez  ▼▼▼
+// ══════════════════════════════════════════════════════════
+var SCRIPT_URL=''; // ← Pega aquí tu URL de Google Apps Script /exec
+//  Ejemplo: 'https://script.google.com/macros/s/AKfy.../exec'
+//  Si la dejas vacía, la app funciona igual (solo offline/local)
+// ══════════════════════════════════════════════════════════
+
 var TT={amoniaco:{l:'Amoniaco',c:'#00e888'},freon:{l:'Freón',c:'#00c8ff'}};
 var SHIFTS=[{id:'manana',l:'Mañana',c:'#ffaa00'},{id:'tarde',l:'Tarde',c:'#00c8ff'},{id:'noche',l:'Noche',c:'#aa88ff'}];
 var PRODS=[{name:'Camarones',unitType:'caja',weightPerUnit:4,weightUnit:'lbs'},{name:'Langostinos',unitType:'caja',weightPerUnit:5,weightUnit:'lbs'},{name:'Pescado',unitType:'caja',weightPerUnit:10,weightUnit:'kg'},{name:'Tilapia',unitType:'caja',weightPerUnit:8,weightUnit:'lbs'},{name:'Calamar',unitType:'funda',weightPerUnit:2,weightUnit:'kg'},{name:'Pulpo',unitType:'funda',weightPerUnit:1.5,weightUnit:'kg'}];
-var MAX_OUT=60;var CK='fc_v8';var CFG='fc_cfg_v6';
+var CK='fc_v8';var CFG='fc_cfg_v6';
+
+// ── SISTEMA DE TEMAS ─────────────────────────────────────
+var THEMES_DEF={
+  ocean: {name:'🌊 Ocean',s1:'#06090f',s2:'#0b1525',s3:'#0f1e38',b:'#1a3557',ac:'#00c8ff',g:'#00e888',w:'#ffaa00',d:'#ff3366',t:'#c8e0f4',m:'#3d6b8a',t2:'#7a9ab8'},
+  aurora:{name:'🌌 Aurora',s1:'#08040f',s2:'#130a22',s3:'#1c1235',b:'#2e1a52',ac:'#cc88ff',g:'#00ffaa',w:'#ffaa44',d:'#ff4488',t:'#e0d0ff',m:'#6a3d90',t2:'#9a68c0'},
+  matrix:{name:'💚 Matrix',s1:'#020802',s2:'#040f04',s3:'#071607',b:'#0b2e0b',ac:'#00ff44',g:'#00cc33',w:'#aaff00',d:'#ff3300',t:'#c0ffc0',m:'#2a6a2a',t2:'#58a058'},
+  crimson:{name:'🔴 Crimson',s1:'#0f0406',s2:'#1f060b',s3:'#2e0c13',b:'#4e1822',ac:'#ff5577',g:'#ff8844',w:'#ffcc44',d:'#ff2244',t:'#ffc8d4',m:'#8a3048',t2:'#b86075'},
+};
+var THEME_KEY='fc_theme_v1';
+function getThemeId(){try{return localStorage.getItem(THEME_KEY)||'ocean'}catch(e){return'ocean'}}
+function setThemeId(id){try{localStorage.setItem(THEME_KEY,id)}catch(e){}}
+
+// ── COLORES (aplicar tema al cargar) ────────────────────
+var C=(function(){var th=THEMES_DEF[getThemeId()]||THEMES_DEF.ocean;return{s1:th.s1,s2:th.s2,s3:th.s3,b:th.b,ac:th.ac,g:th.g,w:th.w,d:th.d,t:th.t,m:th.m,t2:th.t2}})();
+
+// ── CONFIG DE ALARMAS ────────────────────────────────────
+var ALM_KEY='fc_alm_v2';
+function getAlmCfg(){try{return Object.assign({soundOn:true,vol:0.4,productReady:true,outsideAlert:true,tempCheck:true,maxOutMin:60},JSON.parse(localStorage.getItem(ALM_KEY)||'{}'))}catch(e){return{soundOn:true,vol:0.4,productReady:true,outsideAlert:true,tempCheck:true,maxOutMin:60}}}
+function saveAlmCfg(c){try{localStorage.setItem(ALM_KEY,JSON.stringify(c))}catch(e){}}
+var _almCfg=getAlmCfg();
+var MAX_OUT=_almCfg.maxOutMin||60;
 
 // ── HELPERS ─────────────────────────────────────────────
 function gid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,5)}
@@ -85,37 +113,40 @@ function scfg(d){try{localStorage.setItem(CFG,JSON.stringify(d))}catch(e){}}
 function lcfg(){try{return JSON.parse(localStorage.getItem(CFG)||'{}')}catch(e){return{}}}
 // ── SONIDOS DE ALARMA (Web Audio API) ───────────────────
 function playAlarmSound(type){
+  var cfg=getAlmCfg();
+  if(!cfg.soundOn)return;
+  if(type==='product-ready'&&!cfg.productReady)return;
+  if(type==='outside-alert'&&!cfg.outsideAlert)return;
+  if(type==='temp-check'&&!cfg.tempCheck)return;
+  var vol=parseFloat(cfg.vol)||0.4;
   try{
     var ctx=new (window.AudioContext||window.webkitAudioContext)();
-    function beep(freq,start,dur,vol,wave){
+    function beep(freq,start,dur,vMult,wave){
       var osc=ctx.createOscillator();var gain=ctx.createGain();
       osc.connect(gain);gain.connect(ctx.destination);
       osc.frequency.value=freq;osc.type=wave||'sine';
       gain.gain.setValueAtTime(0.001,ctx.currentTime+start);
-      gain.gain.linearRampToValueAtTime(vol||0.3,ctx.currentTime+start+0.02);
+      gain.gain.linearRampToValueAtTime(vol*(vMult||1),ctx.currentTime+start+0.02);
       gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+start+dur);
       osc.start(ctx.currentTime+start);osc.stop(ctx.currentTime+start+dur+0.05);
     }
     if(type==='product-ready'){
-      // ✅ Coche listo — 3 pitidos ascendentes (celebratorio)
-      beep(700,0,0.12,0.35,'sine');
-      beep(880,0.18,0.12,0.4,'sine');
-      beep(1100,0.36,0.22,0.5,'sine');
+      beep(700,0,0.12,0.9,'sine');
+      beep(880,0.18,0.12,1,'sine');
+      beep(1100,0.36,0.22,1.2,'sine');
     }else if(type==='outside-alert'){
-      // ⏱ Afuera del límite — 2 pitidos urgentes descendentes
-      beep(900,0,0.18,0.45,'square');
-      beep(600,0.28,0.28,0.45,'square');
+      beep(900,0,0.18,1.1,'square');
+      beep(600,0.28,0.28,1.1,'square');
     }else if(type==='temp-check'){
-      // 🌡 Revisión de temperatura — 1 pitido suave
-      beep(520,0,0.35,0.25,'sine');
+      beep(520,0,0.35,0.6,'sine');
     }
   }catch(e){}
 }
 
 // Script URL global — la pone el admin, la leen todos
 var GURL_KEY='fc_gurl_v1';
-function getGUrl(){try{return localStorage.getItem(GURL_KEY)||''}catch(e){return''}}
-function setGUrl(u){try{localStorage.setItem(GURL_KEY,u)}catch(e){}}
+function getGUrl(){try{return SCRIPT_URL||localStorage.getItem(GURL_KEY)||''}catch(e){return SCRIPT_URL||''}}
+function setGUrl(u){try{if(!SCRIPT_URL)localStorage.setItem(GURL_KEY,u)}catch(e){}}
 var SES_KEY='fc_ses_v1';
 function saveSession(u){try{localStorage.setItem(SES_KEY,JSON.stringify({userId:u.id,ts:Date.now()}))}catch(e){}}
 function loadSession(){try{var s=JSON.parse(localStorage.getItem(SES_KEY)||'null');if(!s||Date.now()-s.ts>86400000*30)return null;return USERS.find(function(u){return u.id===s.userId})||null}catch(e){return null}}
@@ -1070,6 +1101,212 @@ function VIA(p){
   );
 }
 
+// ── VISTA CONFIG (separada para claridad) ────────────────
+function VConfig(p){
+  var _alm=useState(getAlmCfg());var alm=_alm[0],setAlm=_alm[1];
+  var _thId=useState(getThemeId());var thId=_thId[0],setThId=_thId[1];
+  var _testSound=useState(null);var testSound=_testSound[0],setTestSound=_testSound[1];
+
+  function updAlm(k,v){var na=Object.assign({},alm);na[k]=v;setAlm(na);saveAlmCfg(na);}
+
+  function changeTheme(id){
+    setThId(id);setThemeId(id);
+    setTimeout(function(){location.reload()},120);
+  }
+
+  function testBeep(type){
+    setTestSound(type);
+    var prev=getAlmCfg();
+    // forzar sonido en test aunque esté apagado
+    var tmp=Object.assign({},prev,{soundOn:true,vol:alm.vol});
+    saveAlmCfg(tmp);
+    playAlarmSound(type);
+    setTimeout(function(){saveAlmCfg(alm);setTestSound(null)},800);
+  }
+
+  var BOX={background:C.s1,border:'1px solid '+C.b,borderRadius:10,padding:16,marginBottom:12};
+  var SEC={fontFamily:'monospace',fontSize:11,fontWeight:700,marginBottom:12};
+  var ROW={display:'flex',justifyContent:'space-between',alignItems:'center',paddingBottom:8,borderBottom:'1px solid '+C.b+'30',marginBottom:8};
+  var LBL={fontSize:11,color:C.t};
+  var SUB={fontSize:9,color:C.m,marginTop:2};
+
+  return h('div',{style:{maxWidth:640}},
+
+    // ── GOOGLE SHEETS ──
+    h('div',{style:BOX},
+      h('div',{style:Object.assign({},SEC,{color:C.ac})},'🔗 GOOGLE SHEETS'),
+      SCRIPT_URL
+        ? h('div',{style:{background:C.g+'12',border:'1px solid '+C.g+'30',borderRadius:8,padding:10,marginBottom:10}},
+            h('div',{style:{fontSize:10,color:C.g,fontWeight:600,marginBottom:4}},'✅ URL configurada directamente en el código'),
+            h('div',{style:{fontFamily:'monospace',fontSize:9,color:C.m,wordBreak:'break-all'}},SCRIPT_URL.slice(0,60)+'...'),
+            h('div',{style:{fontSize:9,color:C.m,marginTop:4}},'Para cambiarla, edita la variable SCRIPT_URL al inicio del archivo index.html')
+          )
+        : h('div',null,
+            h('div',{style:{background:C.w+'12',border:'1px solid '+C.w+'30',borderRadius:6,padding:'7px 10px',marginBottom:10,fontSize:10,color:C.t2}},
+              '💡 Para fijar la URL permanentemente, edita el archivo index.html y busca la variable SCRIPT_URL al inicio del script.'
+            ),
+            h(Inp,{label:'URL del script /exec (temporal, solo este dispositivo)',value:p.cfg.scriptUrl,onChange:function(v){var url=v.trim();setGUrl(url);p.setCfg(function(prev){return Object.assign({},prev,{scriptUrl:url})})},placeholder:'https://script.google.com/macros/s/.../exec'})
+          ),
+      h('div',{style:{display:'flex',gap:8,flexWrap:'wrap'}},
+        h(Btn,{onClick:function(){p.load(p.cfg.scriptUrl)},disabled:p.syncing||!p.cfg.scriptUrl,color:C.g},p.syncing?'⏳ Cargando...':'⬇ Cargar desde Sheets'),
+        h(Btn,{onClick:p.mSync,disabled:p.syncing||!p.cfg.scriptUrl,color:C.ac},'⬆ Subir a Sheets')
+      ),
+      p.sMsg&&h('div',{style:{fontSize:10,color:p.sMsg.indexOf('OK')>-1?C.g:C.d,marginTop:8,padding:'4px 8px',background:p.sMsg.indexOf('OK')>-1?C.g+'10':C.d+'10',borderRadius:5}},p.sMsg)
+    ),
+
+    // ── TEMA VISUAL ──
+    h('div',{style:BOX},
+      h('div',{style:Object.assign({},SEC,{color:'#aa88ff'})},'🎨 TEMA VISUAL'),
+      h('div',{style:{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:8}},
+        Object.keys(THEMES_DEF).map(function(id){
+          var th=THEMES_DEF[id];var active=thId===id;
+          return h('button',{key:id,onClick:function(){changeTheme(id)},
+            style:{background:th.s2,border:'2px solid '+(active?th.ac:th.b),borderRadius:10,padding:'10px 12px',cursor:'pointer',textAlign:'left',transition:'border .15s'}},
+            h('div',{style:{display:'flex',gap:6,alignItems:'center',marginBottom:6}},
+              h('div',{style:{width:10,height:10,borderRadius:'50%',background:th.ac}}),
+              h('div',{style:{width:10,height:10,borderRadius:'50%',background:th.g}}),
+              h('div',{style:{width:10,height:10,borderRadius:'50%',background:th.w}}),
+              active&&h('span',{style:{marginLeft:'auto',fontSize:9,color:th.ac,fontWeight:700}},'✓ ACTIVO')
+            ),
+            h('div',{style:{fontSize:11,fontWeight:700,color:th.t}},(th.name||id)),
+            h('div',{style:{fontSize:9,color:th.m,marginTop:2}},'Color principal: '+th.ac)
+          );
+        })
+      ),
+      h('div',{style:{fontSize:9,color:C.m,marginTop:8}},'⚡ La página se recargará automáticamente al cambiar el tema.')
+    ),
+
+    // ── CONFIGURACIÓN DE ALARMAS ──
+    h('div',{style:BOX},
+      h('div',{style:Object.assign({},SEC,{color:C.w})},'🔔 CONFIGURACIÓN DE ALARMAS'),
+
+      // Sonido global on/off
+      h('div',{style:ROW},
+        h('div',null,
+          h('div',{style:LBL},'🔊 Sonido de alarmas'),
+          h('div',{style:SUB},'Activa o desactiva todos los sonidos')
+        ),
+        h('button',{onClick:function(){updAlm('soundOn',!alm.soundOn)},
+          style:{background:alm.soundOn?C.g+'20':C.s3,border:'1px solid '+(alm.soundOn?C.g:C.b),color:alm.soundOn?C.g:C.m,borderRadius:20,padding:'5px 14px',cursor:'pointer',fontSize:11,fontWeight:700}},
+          alm.soundOn?'ON':'OFF')
+      ),
+
+      // Volumen
+      alm.soundOn&&h('div',{style:{marginBottom:12}},
+        h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:6}},
+          h('div',{style:LBL},'🎚 Volumen'),
+          h('span',{style:{fontFamily:'monospace',fontSize:11,color:C.ac}},Math.round(alm.vol*100)+'%')
+        ),
+        h('input',{type:'range',min:0.1,max:1,step:0.05,value:alm.vol,
+          onChange:function(e){updAlm('vol',parseFloat(e.target.value))},
+          style:{width:'100%',accentColor:C.ac}})
+      ),
+
+      // Por tipo de alarma
+      h('div',{style:{background:C.s2,borderRadius:8,padding:10,marginBottom:10}},
+        h('div',{style:{fontSize:9,color:C.m,marginBottom:8,textTransform:'uppercase',letterSpacing:.7}},'Tipos de alarma'),
+
+        // Coche listo
+        h('div',{style:Object.assign({},ROW,{marginBottom:6,paddingBottom:6})},
+          h('div',null,
+            h('div',{style:LBL},'✅ Coche listo para liberar'),
+            h('div',{style:SUB},'3 pitidos ascendentes · suena cuando el tiempo objetivo se cumple')
+          ),
+          h('div',{style:{display:'flex',gap:6,alignItems:'center'}},
+            alm.soundOn&&h('button',{onClick:function(){testBeep('product-ready')},
+              style:{background:C.g+'15',border:'1px solid '+C.g+'40',color:testSound==='product-ready'?C.g:C.m,borderRadius:6,padding:'3px 8px',cursor:'pointer',fontSize:9}},
+              testSound==='product-ready'?'▶...':'▶ Test'),
+            h('button',{onClick:function(){updAlm('productReady',!alm.productReady)},
+              style:{background:alm.productReady?C.g+'20':C.s3,border:'1px solid '+(alm.productReady?C.g:C.b),color:alm.productReady?C.g:C.m,borderRadius:20,padding:'4px 12px',cursor:'pointer',fontSize:10,fontWeight:700}},
+              alm.productReady?'ON':'OFF')
+          )
+        ),
+
+        // Afuera del límite
+        h('div',{style:Object.assign({},ROW,{marginBottom:6,paddingBottom:6})},
+          h('div',null,
+            h('div',{style:LBL},'⏱ Coche afuera del límite'),
+            h('div',{style:SUB},'2 pitidos urgentes · suena cuando un coche supera el tiempo máximo afuera')
+          ),
+          h('div',{style:{display:'flex',gap:6,alignItems:'center'}},
+            alm.soundOn&&h('button',{onClick:function(){testBeep('outside-alert')},
+              style:{background:C.w+'15',border:'1px solid '+C.w+'40',color:testSound==='outside-alert'?C.w:C.m,borderRadius:6,padding:'3px 8px',cursor:'pointer',fontSize:9}},
+              testSound==='outside-alert'?'▶...':'▶ Test'),
+            h('button',{onClick:function(){updAlm('outsideAlert',!alm.outsideAlert)},
+              style:{background:alm.outsideAlert?C.w+'20':C.s3,border:'1px solid '+(alm.outsideAlert?C.w:C.b),color:alm.outsideAlert?C.w:C.m,borderRadius:20,padding:'4px 12px',cursor:'pointer',fontSize:10,fontWeight:700}},
+              alm.outsideAlert?'ON':'OFF')
+          )
+        ),
+
+        // Revisión de temperatura
+        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+          h('div',null,
+            h('div',{style:LBL},'🌡 Revisión de temperatura'),
+            h('div',{style:SUB},'1 pitido suave · cuando el túnel lleva tiempo sin registro')
+          ),
+          h('div',{style:{display:'flex',gap:6,alignItems:'center'}},
+            alm.soundOn&&h('button',{onClick:function(){testBeep('temp-check')},
+              style:{background:C.ac+'15',border:'1px solid '+C.ac+'40',color:testSound==='temp-check'?C.ac:C.m,borderRadius:6,padding:'3px 8px',cursor:'pointer',fontSize:9}},
+              testSound==='temp-check'?'▶...':'▶ Test'),
+            h('button',{onClick:function(){updAlm('tempCheck',!alm.tempCheck)},
+              style:{background:alm.tempCheck?C.ac+'20':C.s3,border:'1px solid '+(alm.tempCheck?C.ac:C.b),color:alm.tempCheck?C.ac:C.m,borderRadius:20,padding:'4px 12px',cursor:'pointer',fontSize:10,fontWeight:700}},
+              alm.tempCheck?'ON':'OFF')
+          )
+        )
+      ),
+
+      // Tiempo máximo afuera
+      h('div',null,
+        h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:6}},
+          h('div',{style:LBL},'⏳ Límite máximo afuera del túnel'),
+          h('span',{style:{fontFamily:'monospace',fontSize:13,color:alm.maxOutMin>60?C.d:alm.maxOutMin>45?C.w:C.g,fontWeight:700}},alm.maxOutMin+' min')
+        ),
+        h('input',{type:'range',min:20,max:120,step:5,value:alm.maxOutMin,
+          onChange:function(e){updAlm('maxOutMin',parseInt(e.target.value))},
+          style:{width:'100%',accentColor:C.w,marginBottom:4}}),
+        h('div',{style:{display:'flex',justifyContent:'space-between',fontSize:8,color:C.m}},
+          h('span',null,'20 min'),h('span',null,'60 min (default)'),h('span',null,'120 min')
+        ),
+        h('div',{style:{fontSize:9,color:C.m,marginTop:4}},'⚡ Requiere recargar la página para aplicar el nuevo límite.')
+      )
+    ),
+
+    // ── NOTIFICACIONES NTFY ──
+    h('div',{style:BOX},
+      h('div',{style:Object.assign({},SEC,{color:C.w})},'📡 NOTIFICACIONES PUSH (ntfy.sh)'),
+      h(Inp,{label:'Canal ntfy (notificaciones al celular)',value:p.cfg.ntfyTopic,onChange:function(v){p.setCfg(function(prev){return Object.assign({},prev,{ntfyTopic:v.toLowerCase().replace(/[^a-z0-9-]/g,'')})})},placeholder:'freeze-planta-2024'}),
+      p.cfg.ntfyTopic&&h('div',{style:{background:C.g+'10',border:'1px solid '+C.g+'30',borderRadius:6,padding:10}},
+        h('div',{style:{fontFamily:'monospace',fontSize:10,color:C.ac,wordBreak:'break-all',marginBottom:8}},'https://ntfy.sh/'+p.cfg.ntfyTopic),
+        h('div',{style:{display:'flex',gap:6,flexWrap:'wrap'}},
+          h(Btn,{sm:true,color:C.ac,onClick:function(){window.open('https://ntfy.sh/'+p.cfg.ntfyTopic)}},'Abrir'),
+          h(Btn,{sm:true,color:C.m,onClick:function(){navigator.clipboard&&navigator.clipboard.writeText('https://ntfy.sh/'+p.cfg.ntfyTopic)}},'Copiar'),
+          h(Btn,{sm:true,color:C.w,onClick:function(){fetch('https://ntfy.sh/'+p.cfg.ntfyTopic,{method:'POST',headers:{'Title':'FREEZE CONTROL','Tags':'white_check_mark','Content-Type':'text/plain'},body:'✅ Prueba de notificación OK'})}},'Probar')
+        )
+      )
+    ),
+
+    // ── EXPORTAR DATOS ──
+    h('div',{style:BOX},
+      h('div',{style:Object.assign({},SEC,{color:C.g})},'📊 EXPORTAR DATOS'),
+      h(Btn,{onClick:function(){
+        if(typeof XLSX==='undefined'){alert('Excel no disponible');return}
+        var wb=XLSX.utils.book_new();
+        var cd=[['#','Estado','Producto','Tipo','Cantidad','Peso/Und','Unidad','Total Lbs','Tunel','Ciclos']];
+        p.coches.forEach(function(c){cd.push([c.number,c.status,c.productName,c.unitType,c.units||0,c.weightPerUnit||0,c.weightUnit||'lbs',c.totalLbs||0,p.tunnels.find(function(t){return t.id===c.tunnelId})?p.tunnels.find(function(t){return t.id===c.tunnelId}).name:'',c.ciclos||0])});
+        XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(cd),'Coches');
+        var hd=[['#','Producto','Tipo','Cantidad','Peso','Unidad','Total Lbs','Tunel','Carga','Entrada','Salida','Min Afuera','Horas','Turno','Operador']];
+        p.hist.forEach(function(hh){hd.push([hh.number,hh.productName||'',hh.unitType||'caja',hh.units||0,hh.weightPerUnit||0,hh.weightUnit||'lbs',hh.totalLbs||0,hh.tunnelName||'',fmt(hh.productLoadTime),fmt(hh.entryTime),fmt(hh.exitTime),hh.outsideMin||0,hh.horasEnTunel||0,SHIFTS.find(function(s){return s.id===hh.shift})?SHIFTS.find(function(s){return s.id===hh.shift}).l:hh.shift||'',hh.userName||''])});
+        XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(hd),'Historial');
+        var td=[['Tunel','Aire C','Prod C','Objetivo','Estado','Operador','Fecha']];
+        p.tLogs.forEach(function(l){td.push([l.tunnelName||'',l.airTemp!=null?l.airTemp:'',l.prodTemp!=null?l.prodTemp:'',l.targetTemp||0,l.estado||'normal',l.userName||'',fmt(l.timestamp)])});
+        XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(td),'Temperaturas');
+        XLSX.writeFile(wb,'FreezeControl_'+new Date().toISOString().slice(0,10)+'.xlsx');
+      },color:C.g},'⬇ Descargar Excel (.xlsx)'),
+      h('div',{style:{fontSize:9,color:C.m,marginTop:6}},'Incluye: Coches actuales · Historial · Registros de temperatura')
+    )
+  );
+}
+
 function VGestion(p){
   var _tab=useState('coches');var tab=_tab[0],setTab=_tab[1];
   var tabs=[['coches','Coches'],['tuneles','Tuneles']];
@@ -1118,72 +1355,7 @@ function VGestion(p){
         })
       )
     ),
-    tab==='config'&&p.isAdmin&&h('div',{style:{maxWidth:600}},
-      h('div',{style:{background:C.s1,border:'1px solid '+C.b,borderRadius:10,padding:16,marginBottom:12}},
-        h('div',{style:{fontFamily:'monospace',fontSize:11,color:C.ac,marginBottom:6,fontWeight:700}},'GOOGLE SHEETS'),
-        h('div',{style:{background:C.ac+'10',border:'1px solid '+C.ac+'30',borderRadius:6,padding:'7px 10px',marginBottom:12,fontSize:10,color:C.t2}},
-          '🔗 Esta URL es compartida — todos los usuarios de la app usarán este script automáticamente al ingresar.'
-        ),
-        h(Inp,{label:'URL del script /exec',value:p.cfg.scriptUrl,onChange:function(v){var url=v.trim();setGUrl(url);p.setCfg(function(prev){return Object.assign({},prev,{scriptUrl:url})})},placeholder:'https://script.google.com/macros/s/.../exec'}),
-        h('div',{style:{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap'}},
-          h(Btn,{onClick:function(){p.load(p.cfg.scriptUrl)},disabled:p.syncing||!p.cfg.scriptUrl,color:C.g},p.syncing?'Cargando...':'Cargar desde Sheets'),
-          h(Btn,{onClick:p.mSync,disabled:p.syncing||!p.cfg.scriptUrl,color:C.ac},'Subir a Sheets')
-        ),
-        p.sMsg&&h('div',{style:{fontSize:10,color:p.sMsg.indexOf('OK')>-1||p.sMsg.indexOf('✅')>-1?C.g:C.d,padding:'5px 8px',background:p.sMsg.indexOf('OK')>-1||p.sMsg.indexOf('✅')>-1?C.g+'10':C.d+'10',borderRadius:5}},p.sMsg)
-      ),
-      h('div',{style:{background:C.s1,border:'1px solid '+C.b,borderRadius:10,padding:16,marginBottom:12}},
-        h('div',{style:{fontFamily:'monospace',fontSize:11,color:C.w,marginBottom:12,fontWeight:700}},'NOTIFICACIONES (ntfy.sh)'),
-        h(Inp,{label:'Canal ntfy',value:p.cfg.ntfyTopic,onChange:function(v){p.setCfg(function(prev){return Object.assign({},prev,{ntfyTopic:v.toLowerCase().replace(/[^a-z0-9-]/g,'')})})},placeholder:'freeze-planta-2024'}),
-        p.cfg.ntfyTopic&&h('div',{style:{background:C.g+'10',border:'1px solid '+C.g+'30',borderRadius:6,padding:10}},
-          h('div',{style:{fontSize:10,color:C.g,marginBottom:4,fontWeight:600}},'Canal: ntfy.sh/'+p.cfg.ntfyTopic),
-          h('div',{style:{fontFamily:'monospace',fontSize:11,color:C.ac,wordBreak:'break-all',marginBottom:8}},'https://ntfy.sh/'+p.cfg.ntfyTopic),
-          h('div',{style:{display:'flex',gap:6,flexWrap:'wrap'}},
-            h(Btn,{sm:true,color:C.ac,onClick:function(){window.open('https://ntfy.sh/'+p.cfg.ntfyTopic)}},'Abrir'),
-            h(Btn,{sm:true,color:C.m,onClick:function(){navigator.clipboard&&navigator.clipboard.writeText('https://ntfy.sh/'+p.cfg.ntfyTopic)}},'Copiar link'),
-            h(Btn,{sm:true,color:C.w,onClick:function(){fetch('https://ntfy.sh/'+p.cfg.ntfyTopic,{method:'POST',headers:{'Title':'FREEZE CONTROL','Tags':'white_check_mark','Content-Type':'text/plain'},body:'Prueba OK'})}},'Probar')
-          )
-        )
-      ),
-      // API Keys — solo admin
-      h('div',{style:{background:C.s1,border:'1px solid '+C.b,borderRadius:10,padding:16,marginBottom:12}},
-        h('div',{style:{fontFamily:'monospace',fontSize:11,color:'#aa88ff',marginBottom:12,fontWeight:700}},'🤖 API KEYS — Inteligencia Artificial'),
-        h('div',{style:{background:'#aa88ff12',border:'1px solid #aa88ff30',borderRadius:8,padding:10,marginBottom:12,fontSize:10,color:C.t2}},
-          '⚠️ Solo el administrador puede ver y modificar estas claves. Se guardan localmente en este dispositivo.'
-        ),
-        h(Inp,{label:'Anthropic API Key (Claude — Recomendado)',value:p.cfg.anthropicKey||'',onChange:function(v){p.setCfg(function(prev){return Object.assign({},prev,{anthropicKey:v.trim()})})},placeholder:'sk-ant-api03-...'}),
-        p.cfg.anthropicKey&&h('div',{style:{fontSize:10,color:C.g,marginBottom:8,display:'flex',gap:6,alignItems:'center'}},
-          h('span',null,'✅ Clave Anthropic configurada'),
-          h(Btn,{sm:true,color:C.d,onClick:function(){p.setCfg(function(prev){return Object.assign({},prev,{anthropicKey:''})})}},'Eliminar')
-        ),
-        h(Inp,{label:'OpenAI API Key (ChatGPT — Alternativa)',value:p.cfg.openaiKey||'',onChange:function(v){p.setCfg(function(prev){return Object.assign({},prev,{openaiKey:v.trim()})})},placeholder:'sk-...'}),
-        p.cfg.openaiKey&&h('div',{style:{fontSize:10,color:C.g,marginBottom:8,display:'flex',gap:6,alignItems:'center'}},
-          h('span',null,'✅ Clave OpenAI configurada'),
-          h(Btn,{sm:true,color:C.d,onClick:function(){p.setCfg(function(prev){return Object.assign({},prev,{openaiKey:''})})}},'Eliminar')
-        ),
-        h('div',{style:{fontSize:10,color:C.m,marginTop:4}},
-          '💡 Se usará Anthropic si ambas están configuradas. La clave se envia al Apps Script para llamar a la IA de forma segura.'
-        )
-      ),
-      h('div',{style:{background:C.s1,border:'1px solid '+C.b,borderRadius:10,padding:16}},
-        h('div',{style:{fontFamily:'monospace',fontSize:11,color:C.g,marginBottom:10,fontWeight:700}},'EXPORTAR DATOS'),
-        h(Btn,{onClick:function(){var hh=new VHistorial({history:p.hist,coches:p.coches,tunnels:p.tunnels,tLogs:p.tLogs});hh.xls&&hh.xls()},color:C.m},''),
-        h(Btn,{onClick:function(){
-          if(typeof XLSX==='undefined'){alert('Excel no disponible');return}
-          var wb=XLSX.utils.book_new();
-          var cd=[['#','Estado','Producto','Tipo','Cantidad','Peso/Und','Unidad','Total Lbs','Tunel','Ciclos']];
-          p.coches.forEach(function(c){cd.push([c.number,c.status,c.productName,c.unitType,c.units||0,c.weightPerUnit||0,c.weightUnit||'lbs',c.totalLbs||0,p.tunnels.find(function(t){return t.id===c.tunnelId})?p.tunnels.find(function(t){return t.id===c.tunnelId}).name:'',c.ciclos||0])});
-          XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(cd),'Coches');
-          var hd=[['#','Producto','Tipo','Cantidad','Peso','Unidad','Total Lbs','Tunel','Carga','Entrada','Salida','Min Afuera','Horas','Turno','Operador']];
-          p.hist.forEach(function(hh){hd.push([hh.number,hh.productName||'',hh.unitType||'caja',hh.units||0,hh.weightPerUnit||0,hh.weightUnit||'lbs',hh.totalLbs||0,hh.tunnelName||'',fmt(hh.productLoadTime),fmt(hh.entryTime),fmt(hh.exitTime),hh.outsideMin||0,hh.horasEnTunel||0,SHIFTS.find(function(s){return s.id===hh.shift})?SHIFTS.find(function(s){return s.id===hh.shift}).l:hh.shift||'',hh.userName||''])});
-          XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(hd),'Historial');
-          var td=[['Tunel','Aire C','Prod C','Objetivo','Estado','Operador','Fecha']];
-          p.tLogs.forEach(function(l){td.push([l.tunnelName||'',l.airTemp!=null?l.airTemp:'',l.prodTemp!=null?l.prodTemp:'',l.targetTemp||0,l.estado||'normal',l.userName||'',fmt(l.timestamp)])});
-          XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(td),'Temperaturas');
-          XLSX.writeFile(wb,'FreezeControl_'+new Date().toISOString().slice(0,10)+'.xlsx');
-        },color:C.g},'Descargar Excel (.xlsx)'),
-        h('div',{style:{fontSize:10,color:C.m,marginTop:6}},'Coches actuales + Historial + Temperaturas')
-      )
-    )
+    tab==='config'&&p.isAdmin&&h(VConfig,{cfg:p.cfg,setCfg:p.setCfg,syncing:p.syncing,sMsg:p.sMsg,setSMsg:p.setSMsg,load:p.load,mSync:p.mSync,hist:p.hist,coches:p.coches,tunnels:p.tunnels,tLogs:p.tLogs})
   );
 }
 
@@ -1249,8 +1421,8 @@ function App(){
   var _hi=useState(cache.history&&cache.history.length?cache.history:DEF_H);var history=_hi[0],setHistory=_hi[1];
   var _al=useState([]);var alarms=_al[0],setAlarms=_al[1];
   var _cf=useState(Object.assign({scriptUrl:getGUrl(),ntfyTopic:''},cfg));var config=_cf[0],setConfig=_cf[1];
-  var _em=useState('admin@planta.com');var email=_em[0],setEmail=_em[1];
-  var _pw=useState('admin123');var pass=_pw[0],setPass=_pw[1];
+  var _em=useState('');var email=_em[0],setEmail=_em[1];
+  var _pw=useState('');var pass=_pw[0],setPass=_pw[1];
   var _er=useState('');var err=_er[0],setErr=_er[1];
   var _sy=useState(false);var syncing=_sy[0],setSyncing=_sy[1];
   var _sm=useState('');var sMsg=_sm[0],setSMsg=_sm[1];
