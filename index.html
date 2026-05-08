@@ -147,8 +147,9 @@ function playAlarmSound(type){
     }else if(type==='outside-alert'){
       beep(900,0,0.18,1.1,'square');
       beep(600,0.28,0.28,1.1,'square');
-    }else if(type==='temp-check'){
+    }else if(type==='temp-check'||type==='pre-release-check'){
       beep(520,0,0.35,0.6,'sine');
+      if(type==='pre-release-check'){beep(660,0.45,0.2,0.7,'sine');}
     }
   }catch(e){}
 }
@@ -1991,26 +1992,63 @@ function App(){
             createdAt:n,ack:false});
         }
       });
+      // ─── ALARMA PROACTIVA: verificar temperatura del producto ────────────
+      // Se dispara 1 hora antes del tiempo estimado de finalización
+      // Así el operador puede abrir y revisar la temperatura ANTES de liberar
+      coR.current.forEach(function(c){
+        if(c.status!=='en-tunel'||!c.entryTime)return;
+        var t=tuR.current.find(function(x){return x.id===c.tunnelId});if(!t)return;
+        var accMs=c.accumulatedTunnelMs||0;
+        var totalMs=accMs+(n-c.entryTime);
+        var targetMs=t.targetTimeHours*3600000;
+        // Calcular objetivo efectivo usando historial
+        var histItems=hiR.current.filter(function(h){return h.productName===c.productName&&h.tunnelId===t.id&&!h.earlyRelease&&+h.horasEnTunel>0&&+h.horasEnTunel<t.targetTimeHours*2;});
+        var effectiveMs=histItems.length>0
+          ?(histItems.reduce(function(s,h){return s+(+h.horasEnTunel*3600000)},0)/histItems.length)
+          :targetMs;
+        var remainingMs=effectiveMs-totalMs;
+        var ALERT_BEFORE=60*60000; // 1 hora antes
+        // Disparar si falta entre 0 y 60 min
+        var shouldFire=remainingMs>0&&remainingMs<=ALERT_BEFORE;
+        var alreadyPrc=alR.current.some(function(a){return a.cocheId===c.id&&a.type==='pre-release-check'&&!a.ack;});
+        if(shouldFire&&!alreadyPrc){
+          var minLeft=Math.round(remainingMs/60000);
+          var histInfo=histItems.length>0?' (historial: '+histItems.length+' ciclos)':'';
+          na.push({id:gid(),type:'pre-release-check',tunnelId:t.id,cocheId:c.id,
+            msg:'🔬 Coche #'+c.number+' ('+c.productName+') — Faltan ~'+minLeft+'min para completar'+histInfo+'. ABRIR tunel y revisar temperatura del producto ahora.',
+            createdAt:n,ack:false});
+        }
+      });
       if(na.length){setAlarms(function(p){return p.concat(na)});na.forEach(function(a){
         // 🔊 Sonido inicial diferenciado por tipo
         playAlarmSound(a.type);
-        // 📈 Alarma escalante solo para product-ready
-        if(a.type==='product-ready'){
-          var firedAt=Date.now();
+        // 📈 TODAS las alarmas suenan continuamente hasta que se atienden
+        {
+          var firedAt2=Date.now();
           var escIv=setInterval(function(){
             var cur=alR.current.find(function(x){return x.id===a.id});
             if(!cur||cur.ack){clearInterval(escIv);delete escRef.current[a.id];return;}
-            var elapsed=Math.round((Date.now()-firedAt)/1000);
-            // ALARMA CONTINUA cada 10s - escala en urgencia
-            if(elapsed<120){playAlarmSound('product-ready');}
-            else if(elapsed<300){playAlarmSound('product-ready');setTimeout(function(){playAlarmSound('outside-alert')},400);}
-            else{playUrgentSound();}
-            // Push al celular si sigue sin atender
+            var elapsed=Math.round((Date.now()-firedAt2)/1000);
+            if(a.type==='product-ready'){
+              if(elapsed<120){playAlarmSound('product-ready');}
+              else if(elapsed<300){playAlarmSound('product-ready');setTimeout(function(){playAlarmSound('outside-alert')},400);}
+              else{playUrgentSound();}
+            }else if(a.type==='outside-alert'){
+              if(elapsed<300){playAlarmSound('outside-alert');}
+              else{playUrgentSound();}
+            }else if(a.type==='temp-check'||a.type==='pre-release-check'){
+              playAlarmSound('temp-check');
+              // Más urgente pasados 5 min
+              if(elapsed>=300){setTimeout(function(){playAlarmSound('outside-alert')},600);}
+            }else{
+              playAlarmSound(a.type);
+            }
+            // Push repetida si sigue sin atender
             if(elapsed>=60&&typeof Notification!=='undefined'&&Notification.permission==='granted'){
               try{new Notification('FREEZE CONTROL',{body:'SIN ATENDER: '+a.msg,tag:a.id+'-r',silent:false})}catch(e){}
             }
-          },10000); // cada 10 segundos - es una alarma, debe molestar
-          escRef.current[a.id]={iv:escIv,firedAt:firedAt};
+          },10000); // cada 10 segundos - todas las alarmas deben molestar
+          escRef.current[a.id]={iv:escIv,firedAt:firedAt2};
         }
         if(typeof Notification!=='undefined'&&Notification.permission==='granted'){
           var nopts={
@@ -2023,7 +2061,7 @@ function App(){
             // Datos para que el SW repita la notificacion si no se atiende
             data:{
               alarmId:a.id,body:a.msg,
-              repeatUntilAck:a.type==='product-ready'||a.type==='outside-alert',
+              repeatUntilAck:true, // TODAS las alarmas se repiten
               repeatCount:0,acked:false
             }
           };
