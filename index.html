@@ -62,7 +62,7 @@ var R=React,h=R.createElement,useState=R.useState,useEffect=R.useEffect,useRef=R
 // ══════════════════════════════════════════════════════════
 // ▼▼▼  CONFIGURACIÓN DIRECTA — edita aquí una sola vez  ▼▼▼
 // ══════════════════════════════════════════════════════════
-var SCRIPT_URL='https://script.google.com/macros/s/AKfycbytR0Bacr5Av34cIMAyH5pc3-V4uZCG2k7AIR6BLWEFh2iRg1HG4BU9GgtKjUL4QRTK/exec'; // ← Pega aquí tu URL de Google Apps Script /exec
+var SCRIPT_URL=''; // ← Pega aquí tu URL de Google Apps Script /exec
 //  Ejemplo: 'https://script.google.com/macros/s/AKfy.../exec'
 //  Si la dejas vacía, la app funciona igual (solo offline/local)
 // ══════════════════════════════════════════════════════════
@@ -177,8 +177,8 @@ var GURL_KEY='fc_gurl_v1';
 function getGUrl(){try{return SCRIPT_URL||localStorage.getItem(GURL_KEY)||''}catch(e){return SCRIPT_URL||''}}
 function setGUrl(u){try{if(!SCRIPT_URL)localStorage.setItem(GURL_KEY,u)}catch(e){}}
 var SES_KEY='fc_ses_v1';
-function saveSession(u){try{localStorage.setItem(SES_KEY,JSON.stringify({userId:u.id,ts:Date.now()}))}catch(e){}}
-function loadSession(){try{var s=JSON.parse(localStorage.getItem(SES_KEY)||'null');if(!s||Date.now()-s.ts>86400000*30)return null;return USERS.find(function(u){return u.id===s.userId})||null}catch(e){return null}}
+function saveSession(u){try{localStorage.setItem(SES_KEY,JSON.stringify({user:u,ts:Date.now()}))}catch(e){}}
+function loadSession(){try{var s=JSON.parse(localStorage.getItem(SES_KEY)||'null');if(!s||Date.now()-s.ts>86400000*30)return null;return s.user||null}catch(e){return null}}
 function clearSession(){try{localStorage.removeItem(SES_KEY)}catch(e){}}
 
 // ── DATOS DEFAULT ────────────────────────────────────────
@@ -226,6 +226,42 @@ function Sparkline(p){
 }
 
 function Modal(p){useEffect(function(){document.body.style.overflow='hidden';return function(){document.body.style.overflow=''}},[]);return h('div',{onClick:function(e){if(e.target===e.currentTarget)p.onClose&&p.onClose()},style:{position:'fixed',inset:0,background:'#000c',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:12}},h('div',{className:'fade',style:{background:C.s1,border:'1px solid '+C.b,borderRadius:12,padding:20,width:'100%',maxWidth:p.width||480,maxHeight:'92vh',overflowY:'auto'}},h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}},h('div',{style:{fontFamily:'monospace',fontSize:12,color:C.ac,fontWeight:700}},p.title),h('button',{onClick:p.onClose,style:{background:'none',border:'none',color:C.m,cursor:'pointer',fontSize:20,lineHeight:1}},'✕')),p.children))}
+
+// ── INDICADOR INTELIGENTE DE PRODUCTO LISTO ─────────────
+// Aprende del historial real: calcula promedio por producto+tunel
+function calcReadiness(c,tunnel,history,tLogs){
+  if(!c||c.status!=='en-tunel'||!c.entryTime||!tunnel)return null;
+  var n=Date.now();
+  var elapsedH=(n-c.entryTime)/3600000;
+  var targetH=tunnel.targetTimeHours;
+  // Aprendizaje: promedio histórico real para este producto+tunel
+  var histItems=history.filter(function(h){
+    return h.productName===c.productName&&h.tunnelId===tunnel.id&&
+           !h.earlyRelease&&+h.horasEnTunel>0&&+h.horasEnTunel<targetH*2;
+  });
+  var histAvg=histItems.length>0
+    ?(histItems.reduce(function(s,h){return s+(+h.horasEnTunel)},0)/histItems.length)
+    :null;
+  var effectiveTarget=histAvg?Math.round(histAvg*10)/10:targetH;
+  // Temperatura más reciente del túnel
+  var lastLog=tLogs.filter(function(l){return l.tunnelId===tunnel.id})
+                   .sort(function(a,b){return b.timestamp-a.timestamp})[0];
+  var prodTempOK=lastLog&&lastLog.prodTemp!=null&&lastLog.prodTemp<=tunnel.targetTemp+1;
+  var airTempOK=lastLog&&lastLog.airTemp!=null&&Math.abs(lastLog.airTemp-tunnel.targetTemp)<=3;
+  var pr=Math.min(110,Math.round(elapsedH/effectiveTarget*100));
+  var remaining=Math.max(0,effectiveTarget-elapsedH);
+  // Determinar estado
+  var status;
+  if(prodTempOK)status='ready';
+  else if(pr>=110)status='overdue';
+  else if(pr>=100)status='check';
+  else if(pr>=80)status='close';
+  else if(pr>=40)status='advancing';
+  else status='early';
+  return{pr:pr,elapsedH:elapsedH,remaining:remaining,effectiveTarget:effectiveTarget,
+         targetH:targetH,histSamples:histItems.length,histAvg:histAvg,
+         status:status,prodTempOK:!!prodTempOK,airTempOK:!!airTempOK,lastLog:lastLog||null};
+}
 
 // ── COCHE CARD ───────────────────────────────────────────
 function CCard(p){
@@ -286,6 +322,37 @@ function CCard(p){
         return h('div',{style:{background:(ya?C.g:restMs<3600000?C.w:C.ac)+'12',border:'1px solid '+(ya?C.g:restMs<3600000?C.w:C.ac)+'30',borderRadius:5,padding:'3px 7px',marginBottom:4,display:'flex',justifyContent:'space-between',alignItems:'center'}},
           h('span',{style:{fontSize:8,color:ya?C.g:restMs<3600000?C.w:C.m}},ya?'⏰ LISTO DESDE':'⏰ Sale aprox.'),
           h('span',{style:{fontSize:9,color:ya?C.g:restMs<3600000?C.w:C.ac,fontFamily:'monospace',fontWeight:700}},ya?fmtT(salida.getTime()):fmtT(salida.getTime()))
+        );
+      })(),
+      // ── INDICADOR INTELIGENTE ──────────────────────────
+      (function(){
+        var rd=calcReadiness(c,t,p.history||[],p.tLogs||[]);
+        if(!rd)return null;
+        var stMap={
+          ready:   {icon:'✅',label:'LISTO — liberar',color:C.g},
+          check:   {icon:'🔔',label:'Verificar temp',color:C.w},
+          close:   {icon:'🟡',label:'Casi listo ('+rd.pr+'%)',color:C.w},
+          advancing:{icon:'🔵',label:'En proceso ('+rd.pr+'%)',color:C.ac},
+          overdue: {icon:'🔴',label:'EXCEDIDO '+rd.pr+'%',color:C.d},
+          early:   {icon:'⏳',label:'Iniciando ('+rd.pr+'%)',color:C.m},
+        };
+        var st=stMap[rd.status]||stMap.early;
+        return h('div',{style:{background:st.color+'10',border:'1px solid '+st.color+'30',borderRadius:6,padding:'4px 7px',marginBottom:4}},
+          h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:2}},
+            h('span',{style:{fontSize:9,fontWeight:700,color:st.color}},st.icon+' '+st.label),
+            rd.remaining>0&&h('span',{style:{fontSize:8,color:C.m,fontFamily:'monospace'}},elpS(rd.remaining*3600000)+' restante')
+          ),
+          h('div',{style:{background:C.s2,borderRadius:2,height:3,marginBottom:3}},
+            h('div',{style:{background:st.color,borderRadius:2,height:'100%',width:Math.min(100,rd.pr)+'%',transition:'width 2s'}})
+          ),
+          h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+            rd.histSamples>0
+              ?h('span',{style:{fontSize:7,color:C.m}},
+                  '📊 Historial: '+rd.histAvg.toFixed(1)+'h prom. ('+rd.histSamples+' ciclos)')
+              :h('span',{style:{fontSize:7,color:C.m}},'📊 Objetivo: '+rd.targetH+'h (sin historial aún)'),
+            rd.lastLog&&rd.lastLog.prodTemp!=null&&h('span',{style:{fontSize:7,color:rd.prodTempOK?C.g:C.ac,fontFamily:'monospace'}},
+              'Prod: '+rd.lastLog.prodTemp+'°C '+(rd.prodTempOK?'✅':''))
+          )
         );
       })(),
       h('div',{style:{display:'flex',gap:4}},h(Btn,{sm:true,color:C.g,onClick:function(e){e.stopPropagation();p.onReady(c.id)}},'Listo'),h(Btn,{sm:true,color:C.m,onClick:function(e){e.stopPropagation();p.onFree(c.id)}},'Sacar'))
@@ -408,7 +475,7 @@ function MCarga(p){
 
 function MCocheForm(p){
   var ini=p.initial,def=PRODS[0];
-  var _f=useState(ini?Object.assign({},ini):{id:'',number:'',productName:def.name,unitType:def.unitType,units:0,weightPerUnit:def.weightPerUnit,weightUnit:def.weightUnit,status:'libre',tunnelId:null,entryTime:null,exitTime:null,productLoadTime:null,ciclos:0,lastProduct:null});
+  var _f=useState(ini?Object.assign({},ini):{id:'',number:'',productName:def.name,unitType:def.unitType,units:0,weightPerUnit:def.weightPerUnit,weightUnit:def.weightUnit,status:'libre',tunnelId:null,entryTime:null,exitTime:null,productLoadTime:null,ciclos:0,lastProduct:null,lote:getLastLote()});
   var f=_f[0],sf=_f[1];
   var _err=useState('');var err=_err[0],setErr=_err[1];
   var _saving=useState(false);var saving=_saving[0],setSaving=_saving[1];
@@ -416,44 +483,53 @@ function MCocheForm(p){
   var lbs=calcLbs(f.units||0,f.weightPerUnit,f.weightUnit);
   function guardar(){
     if(saving)return;
-    if(!String(f.number||'').trim()){setErr('El número de coche es obligatorio');return;}
+    if(!String(f.number||'').trim()){setErr('El numero de coche es obligatorio');return;}
     setSaving(true);
-    try{
-      p.onSave(Object.assign({},f,{id:f.id||gid(),number:String(f.number).trim(),units:+f.units,weightPerUnit:+f.weightPerUnit,totalLbs:lbs,lbs:lbs,productLoadTime:+f.units>0?(f.productLoadTime||Date.now()):null}));
-    }catch(e){console.error('saveCoche error:',e);}
-    p.onClose(); // siempre cerrar, aunque onSave falle
+    var lote=f.lote||nextLote(f.productName);if(f.lote)saveLastLote(f.lote);
+    try{p.onSave(Object.assign({},f,{id:f.id||gid(),number:String(f.number).trim(),units:+f.units,weightPerUnit:+f.weightPerUnit,totalLbs:lbs,lbs:lbs,lote:lote,productLoadTime:+f.units>0?(f.productLoadTime||Date.now()):null}));}catch(e){console.error(e);}
+    p.onClose();
   }
   return h(Modal,{title:ini?'Editar Coche #'+ini.number:'Nuevo Coche',onClose:p.onClose,width:480},
-    h(Inp,{label:'Número de coche *',value:f.number,onChange:function(v){upd('number',v)},placeholder:'Ej: 009'}),
-    err&&h('div',{style:{background:C.d+'15',border:'1px solid '+C.d+'50',borderRadius:6,padding:'6px 10px',marginBottom:8,fontSize:11,color:C.d}},'⚠ '+err),
+    h(Inp,{label:'Numero de coche *',value:f.number,onChange:function(v){upd('number',v)},placeholder:'Ej: 009'}),
+    err&&h('div',{style:{background:C.d+'15',border:'1px solid '+C.d+'50',borderRadius:6,padding:'6px 10px',marginBottom:8,fontSize:11,color:C.d}},'x '+err),
     h('div',{style:{marginBottom:10}},
       h('div',{style:{fontSize:9,color:C.m,marginBottom:5,textTransform:'uppercase'}},'Producto'),
-      h('div',{style:{display:'flex',flexWrap:'wrap',gap:4,marginBottom:6}},
+      h('div',{style:{display:'flex',flexWrap:'wrap',gap:4}},
         PRODS.map(function(pr){return h('button',{key:pr.name,onClick:function(){sf(function(prev){return Object.assign({},prev,{productName:pr.name,unitType:pr.unitType,weightPerUnit:pr.weightPerUnit,weightUnit:pr.weightUnit})})},
           style:{padding:'4px 10px',borderRadius:12,border:'1px solid '+(f.productName===pr.name?C.ac:C.b),background:f.productName===pr.name?C.ac+'18':C.s3,color:f.productName===pr.name?C.ac:C.t2,cursor:'pointer',fontSize:10}},pr.name)})
       )
     ),
+    h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:10}},
+      ['caja','funda'].map(function(ut){return h('button',{key:ut,onClick:function(){upd('unitType',ut)},
+        style:{padding:'10px',borderRadius:8,border:'2px solid '+(f.unitType===ut?C.ac:C.b),background:f.unitType===ut?C.ac+'15':C.s3,color:f.unitType===ut?C.ac:C.t2,cursor:'pointer',fontWeight:f.unitType===ut?700:400,fontSize:11}},ut==='caja'?'Cajas':'Fundas')})
+    ),
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 80px',gap:8,marginBottom:12}},
       h('div',null,h('div',{style:{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase'}},'Cantidad'),
         h('input',{type:'number',inputMode:'numeric',value:f.units,onChange:function(e){upd('units',e.target.value)},style:{width:'100%',background:C.s3,border:'1px solid '+C.b,borderRadius:6,padding:'8px 10px',color:C.t,fontSize:14}})),
-      h('div',null,h('div',{style:{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase'}},'Peso/unidad'),
+      h('div',null,h('div',{style:{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase'}},'Peso/'+(f.unitType==='funda'?'funda':'caja')),
         h('input',{type:'number',inputMode:'decimal',step:'0.1',value:f.weightPerUnit,onChange:function(e){upd('weightPerUnit',e.target.value)},style:{width:'100%',background:C.s3,border:'1px solid '+C.b,borderRadius:6,padding:'8px 10px',color:C.t,fontSize:14}})),
       h('div',null,h('div',{style:{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase'}},'Unidad'),
         h('div',{style:{display:'flex',flexDirection:'column',gap:4}},
           ['lbs','kg'].map(function(u){return h('button',{key:u,onClick:function(){upd('weightUnit',u)},
             style:{padding:'5px',borderRadius:5,border:'1px solid '+(f.weightUnit===u?C.w:C.b),background:f.weightUnit===u?C.w+'20':C.s3,color:f.weightUnit===u?C.w:C.t2,cursor:'pointer',fontSize:11,fontWeight:600}},u)})))
     ),
-    +f.units>0&&h('div',{style:{background:C.g+'12',border:'1px solid '+C.g+'30',borderRadius:8,padding:10,marginBottom:12,textAlign:'center'}},
-      h('div',{style:{fontSize:9,color:C.m}},'TOTAL LIBRAS'),
-      h('div',{style:{fontFamily:'monospace',fontSize:22,color:C.g,fontWeight:700}},lbs.toLocaleString()+' lbs')
+    +f.units>0&&h('div',{style:{background:C.g+'12',border:'1px solid '+C.g+'30',borderRadius:8,padding:10,marginBottom:12,display:'flex',justifyContent:'space-between',alignItems:'center'}},
+      h('div',null,h('div',{style:{fontSize:9,color:C.m}},'TOTAL LIBRAS'),h('div',{style:{fontFamily:'monospace',fontSize:22,color:C.g,fontWeight:700}},lbs.toLocaleString()+' lbs')),
+      h('div',{style:{fontSize:9,color:C.m,textAlign:'right'}},f.units+' '+(f.unitType==='funda'?'fundas':'cajas'),h('br'),'\xd7 '+f.weightPerUnit+' '+f.weightUnit)
+    ),
+    h('div',{style:{marginBottom:12}},
+      h('div',{style:{fontSize:9,color:C.m,marginBottom:4,textTransform:'uppercase'}},'Lote (se genera automatico si lo dejas vacio)'),
+      h('div',{style:{display:'flex',gap:6}},
+        h('input',{value:f.lote||'',onChange:function(e){upd('lote',e.target.value)},placeholder:'Numero de lote...',
+          style:{flex:1,background:C.s3,border:'1px solid '+(f.lote?C.w:C.b),borderRadius:6,padding:'8px 10px',color:f.lote?C.w:C.t,fontSize:12,fontFamily:'monospace'}}),
+        h('button',{onClick:function(){upd('lote',nextLote(f.productName))},
+          style:{background:C.w+'18',border:'1px solid '+C.w+'60',color:C.w,borderRadius:6,padding:'8px 10px',cursor:'pointer',fontSize:11,whiteSpace:'nowrap'}},'Auto')
+      )
     ),
     h('div',{style:{display:'flex',gap:8,justifyContent:'flex-end',alignItems:'center'}},
-      !String(f.number||'').trim()&&h('span',{style:{fontSize:10,color:C.m,flex:1}},'* Completa el número de coche'),
+      !String(f.number||'').trim()&&h('span',{style:{fontSize:10,color:C.m,flex:1}},'* Numero obligatorio'),
       h(Btn,{onClick:p.onClose,color:C.m},'Cancelar'),
-      h('button',{
-        onClick:guardar,
-        style:{background:C.g,color:'#000',border:'none',borderRadius:8,padding:'10px 18px',cursor:'pointer',fontWeight:700,fontSize:12,opacity:saving?0.6:1}
-      },saving?'Guardando...':'Guardar')
+      h('button',{onClick:guardar,style:{background:C.g,color:'#000',border:'none',borderRadius:8,padding:'10px 18px',cursor:'pointer',fontWeight:700,fontSize:12,opacity:saving?0.6:1}},saving?'Guardando...':'Guardar')
     )
   );
 }
@@ -496,6 +572,42 @@ function MVerif(p){
 }
 
 // ── VISTAS ───────────────────────────────────────────────
+// ── INFORME WA PRE-LIBERACION ────────────────────────────
+function genPreReleaseWA(t,inT,tLogs,userName,now){
+  var turno=SHIFTS.find(function(s){return s.id===shiftOf(now)});
+  var lines=['*FREEZE CONTROL - INFORME DE TUNEL*'];
+  lines.push(new Date(now).toLocaleString('es-EC',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}));
+  lines.push('Turno: *'+(turno?turno.l:'?')+'* | Operador: *'+(userName||'-')+'*');
+  lines.push('');
+  lines.push('Tunel: *'+t.name+'* ('+(t.type==='amoniaco'?'Amoniaco':'Freon')+')');
+  lines.push('Objetivo: '+t.targetTemp+'C / '+t.targetTimeHours+'h');
+  lines.push('');
+  var lastLog=tLogs.filter(function(l){return l.tunnelId===t.id}).sort(function(a,b){return b.timestamp-a.timestamp})[0];
+  inT.forEach(function(c){
+    var el=now-c.entryTime;var elH=el/3600000;
+    var remaining=Math.max(0,t.targetTimeHours*3600000-el);
+    var releaseTs=c.entryTime+t.targetTimeHours*3600000;
+    var hh2=Math.floor(elH),mm2=Math.round((elH-Math.floor(elH))*60);
+    var ya=remaining<=0;
+    lines.push('--- Coche #'+c.number+' ---');
+    lines.push('Producto: *'+(c.productName||'-')+'*');
+    if(c.lote)lines.push('Lote: '+c.lote);
+    lines.push('Cantidad: '+(c.units||0)+' '+(c.unitType==='funda'?'fundas':'cajas')+' x '+(c.weightPerUnit||0)+' '+(c.weightUnit||'lbs')+' = *'+(c.totalLbs||0).toLocaleString()+' lbs*');
+    lines.push('Tiempo en tunel: *'+hh2+'h '+mm2+'min* (obj: '+t.targetTimeHours+'h)');
+    if(lastLog){
+      if(lastLog.airTemp!=null)lines.push('Temp aire: '+lastLog.airTemp+'C');
+      if(lastLog.prodTemp!=null)lines.push('Temp producto: *'+lastLog.prodTemp+'C* '+(lastLog.prodTemp<=t.targetTemp+1?'LISTO':''));
+    }
+    if(ya){lines.push('Estado: *LISTO PARA LIBERAR*');}
+    else{lines.push('Liberacion estimada: *'+new Date(releaseTs).toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'})+'* (en '+elpS(remaining)+')');}
+    lines.push('');
+  });
+  var totalLbs=inT.reduce(function(s,c){return s+(c.totalLbs||0)},0);
+  lines.push('TOTAL: *'+inT.length+' coche'+(inT.length!==1?'s':'')+' | '+totalLbs.toLocaleString()+' lbs*');
+  return lines.join('\n');
+}
+
+
 function VDashboard(p){
   var coches=p.coches,tunnels=p.tunnels,tLogs=p.tLogs;
   var drag=p.drag,setDrag=p.setDrag,dO=p.dO,setDO=p.setDO;
@@ -542,18 +654,57 @@ function VDashboard(p){
               h(Btn,{sm:true,color:C.ac,onClick:function(){p.setVerif(Object.assign({},t,{_occ:inT.length}))}},'Verificar'),
               !full&&coches.some(function(c){return c.status==='libre'&&(c.units||0)>0})&&h(Btn,{sm:true,color:C.w,onClick:function(){p.setBatch(Object.assign({},t,{_occ:inT.length}))}},'Batch'),
               inT.length>0&&confLib!==t.id&&h(Btn,{sm:true,color:C.g,onClick:function(){setConfLib(t.id)}},'Liberar'),
-              inT.length>0&&confLib===t.id&&h('div',{style:{display:'flex',gap:4,alignItems:'center'}},
-                h('span',{style:{fontSize:9,color:C.w}},'\u00bfLiberar '+t.name+'?'),
+              inT.length>0&&confLib===t.id&&h('div',{style:{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap'}},
+                h('span',{style:{fontSize:9,color:C.w,flexShrink:0}},'\u00bfLiberar '+t.name+'?'),
                 h('button',{onClick:function(){setConfLib(null);p.onRelease(t.id,false)},
                   style:{background:C.g+'25',border:'1px solid '+C.g,color:C.g,borderRadius:5,padding:'3px 10px',cursor:'pointer',fontSize:10,fontWeight:700}},'Si'),
                 h('button',{onClick:function(){setConfLib(null)},
-                  style:{background:'none',border:'1px solid '+C.m,color:C.m,borderRadius:5,padding:'3px 8px',cursor:'pointer',fontSize:10}},'No')
+                  style:{background:'none',border:'1px solid '+C.m,color:C.m,borderRadius:5,padding:'3px 8px',cursor:'pointer',fontSize:10}},'No'),
+                h('button',{
+                  title:'Enviar informe de liberacion por WhatsApp',
+                  onClick:function(){
+                    var n=Date.now();
+                    var turno=SHIFTS.find(function(s){return s.id===curShift()})||SHIFTS[0];
+                    var lastTemp=p.tLogs.filter(function(l){return l.tunnelId===t.id}).sort(function(a,b){return b.timestamp-a.timestamp})[0];
+                    var totalLbs=inT.reduce(function(s,c){return s+(c.totalLbs||0)},0);
+                    var lines=[
+                      '*FREEZE CONTROL \u2014 INFORME DE LIBERACI\u00d3N*',
+                      '_'+new Date(n).toLocaleString('es-EC',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})+'_',
+                      'Turno: *'+turno.l+'*',
+                      '',
+                      'T\u00fanel: *'+t.name+'*',
+                      'Objetivo: '+t.targetTemp+'\u00b0C / '+t.targetTimeHours+'h',
+                      ''
+                    ];
+                    inT.forEach(function(c){
+                      var el=n-c.entryTime;
+                      var hh=Math.floor(el/3600000),mm=Math.floor((el%3600000)/60000);
+                      lines.push('--- Coche #'+c.number+' ---');
+                      lines.push('Producto: *'+c.productName+'*');
+                      if(c.lote)lines.push('Lote: '+c.lote);
+                      lines.push('Cantidad: '+c.units+' '+(c.unitType==='funda'?'fundas':'cajas')+' = *'+(c.totalLbs||0).toLocaleString()+' lbs*');
+                      lines.push('Tiempo en tunel: *'+hh+'h '+mm+'min*');
+                      lines.push('');
+                    });
+                    if(lastTemp){
+                      lines.push('Ultima temperatura:');
+                      if(lastTemp.airTemp!=null)lines.push('  Aire: '+lastTemp.airTemp+'\u00b0C');
+                      if(lastTemp.prodTemp!=null)lines.push('  Producto: '+lastTemp.prodTemp+'\u00b0C '+(lastTemp.prodTemp<=t.targetTemp+1?'OK':'en proceso'));
+                      lines.push('');
+                    }
+                    lines.push('TOTAL: *'+inT.length+' coche'+(inT.length!==1?'s':'')+' | '+totalLbs.toLocaleString()+' lbs*');
+                    window.open('https://wa.me/?text='+encodeURIComponent(lines.join('\n')),'_blank');
+                  },
+                  style:{background:'#25D36620',border:'1px solid #25D36660',color:'#25D366',borderRadius:5,padding:'3px 8px',cursor:'pointer',fontSize:10,fontWeight:700,display:'flex',alignItems:'center',gap:3}},
+                  h('svg',{viewBox:'0 0 24 24',width:12,height:12,fill:'#25D366'},h('path',{d:'M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z'})),
+                  'WA'
+                )
               )
             )
           ),
           h('div',{style:{background:C.s3,borderRadius:2,height:3,marginBottom:8}},h('div',{style:{background:t.color,borderRadius:2,height:'100%',width:pct(inT.length,t.capacityCoches)+'%',opacity:.7}})),
           h('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:5}},
-            inT.map(function(c){return h(CCard,{key:c.id,c:c,coches:coches,tunnels:tunnels,inT:true,drag:drag,setDrag:setDrag,setDO:setDO,now:p.now,onReady:p.onReady,onFree:p.onFree,onMaster:p.onMaster,onAssign:assignTunel})}),
+            inT.map(function(c){return h(CCard,{key:c.id,c:c,coches:coches,tunnels:tunnels,inT:true,drag:drag,setDrag:setDrag,setDO:setDO,now:p.now,onReady:p.onReady,onFree:p.onFree,onMaster:p.onMaster,onAssign:assignTunel,tLogs:p.tLogs,history:p.history})}),
             !full&&h('div',{style:{border:'1px dashed '+(isDO?t.color:C.b),borderRadius:6,display:'flex',alignItems:'center',justifyContent:'center',color:t.color+'50',fontSize:10,minHeight:60}},isDO?'Soltar aqui':'+ Arrastra')
           )
         );
@@ -1365,7 +1516,7 @@ function VConfig(p){
       )
     ),
 
-    // ── NOTIFICACIONES NTFY ──
+    // ── EXPORTAR DATOS ──
     h('div',{style:BOX},
       h('div',{style:Object.assign({},SEC,{color:C.w})},'📡 NOTIFICACIONES PUSH (ntfy.sh)'),
       h(Inp,{label:'Canal ntfy (notificaciones al celular)',value:p.cfg.ntfyTopic,onChange:function(v){p.setCfg(function(prev){return Object.assign({},prev,{ntfyTopic:v.toLowerCase().replace(/[^a-z0-9-]/g,'')})})},placeholder:'freeze-planta-2024'}),
@@ -1379,6 +1530,31 @@ function VConfig(p){
       )
     ),
 
+    // ── GESTIÓN DE USUARIOS (solo admin) ──
+    h('div',{style:BOX},
+      h('div',{style:Object.assign({},SEC,{color:'#aa88ff'})},'👥 USUARIOS DEL SISTEMA'),
+      h('div',{style:{background:'#aa88ff10',border:'1px solid #aa88ff30',borderRadius:6,padding:'6px 10px',marginBottom:10,fontSize:9,color:C.m}},
+        'Solo el administrador puede ver y modificar usuarios. Los cambios se sincronizan con la hoja USUARIOS de Sheets.'
+      ),
+      // Lista de usuarios
+      h('div',{style:{display:'flex',flexDirection:'column',gap:4,marginBottom:10}},
+        (p.users||[]).map(function(u){
+          var rolColor=u.role==='admin'?C.d:u.role==='supervisor'?C.w:C.g;
+          return h('div',{key:u.id,style:{background:C.s2,border:'1px solid '+C.b,borderRadius:7,padding:'8px 10px',display:'flex',alignItems:'center',gap:8}},
+            h('div',{style:{flex:1}},
+              h('div',{style:{display:'flex',gap:6,alignItems:'center',marginBottom:2}},
+                h('span',{style:{fontWeight:700,fontSize:11,color:C.t}},u.name||'Sin nombre'),
+                h('span',{style:{fontSize:8,color:rolColor,background:rolColor+'15',padding:'1px 6px',borderRadius:10,fontWeight:700}},u.role)
+              ),
+              h('div',{style:{fontSize:9,color:C.m}},u.email+(u.cargo?' · '+u.cargo:''))
+            ),
+            h('button',{onClick:function(){p.editUser(u)},style:{background:C.ac+'15',border:'1px solid '+C.ac+'40',color:C.ac,borderRadius:5,padding:'3px 8px',cursor:'pointer',fontSize:9}},'Editar'),
+            h('button',{onClick:function(){p.deleteUser(u.id)},style:{background:C.d+'15',border:'1px solid '+C.d+'40',color:C.d,borderRadius:5,padding:'3px 8px',cursor:'pointer',fontSize:9}},'✕')
+          );
+        })
+      ),
+      h(Btn,{onClick:function(){p.editUser(null)},color:'#aa88ff'},'+ Nuevo Usuario')
+    ),
     // ── EXPORTAR DATOS ──
     h('div',{style:BOX},
       h('div',{style:Object.assign({},SEC,{color:C.g})},'📊 EXPORTAR DATOS'),
@@ -1462,7 +1638,7 @@ function VGestion(p){
         })
       )
     ),
-    tab==='config'&&p.isAdmin&&h(VConfig,{cfg:p.cfg,setCfg:p.setCfg,syncing:p.syncing,sMsg:p.sMsg,setSMsg:p.setSMsg,load:p.load,mSync:p.mSync,hist:p.hist,coches:p.coches,tunnels:p.tunnels,tLogs:p.tLogs})
+    tab==='config'&&p.isAdmin&&h(VConfig,{cfg:p.cfg,setCfg:p.setCfg,syncing:p.syncing,sMsg:p.sMsg,setSMsg:p.setSMsg,load:p.load,mSync:p.mSync,hist:p.hist,coches:p.coches,tunnels:p.tunnels,tLogs:p.tLogs,users:p.users,editUser:p.editUser,deleteUser:p.deleteUser})
   );
 }
 
@@ -1564,6 +1740,42 @@ function MShareWA(p){
   );
 }
 
+// ── MODAL EDITAR/CREAR USUARIO ────────────────────────────
+function MUserForm(p){
+  var ini=p.user;
+  var _f=useState(ini?Object.assign({},ini):{id:'',name:'',email:'',password:'',role:'operador',cargo:''});
+  var f=_f[0],sf=_f[1];
+  var _err=useState('');var err=_err[0],setErr=_err[1];
+  function upd(k,v){sf(function(prev){return Object.assign({},prev,{[k]:v})});setErr('');}
+  function guardar(){
+    if(!f.name.trim())return setErr('El nombre es obligatorio');
+    if(!f.email.trim()||f.email.indexOf('@')<0)return setErr('Email inválido');
+    if(!f.password.trim()||f.password.length<4)return setErr('Contraseña mínimo 4 caracteres');
+    try{p.onSave(Object.assign({},f,{id:f.id||gid()}));}catch(e){}
+    p.onClose();
+  }
+  var roles=[{v:'admin',l:'Administrador'},{v:'supervisor',l:'Supervisor'},{v:'operador',l:'Operador'}];
+  return h(Modal,{title:ini?'Editar Usuario':'Nuevo Usuario',onClose:p.onClose,width:420},
+    err&&h('div',{style:{background:C.d+'15',border:'1px solid '+C.d+'50',borderRadius:6,padding:'6px 10px',marginBottom:8,fontSize:11,color:C.d}},'⚠ '+err),
+    h(Inp,{label:'Nombre completo *',value:f.name,onChange:function(v){upd('name',v)},placeholder:'Ej: Carlos Mendoza'}),
+    h(Inp,{label:'Email (usado para login) *',value:f.email,onChange:function(v){upd('email',v.toLowerCase())},placeholder:'correo@empresa.com',type:'email'}),
+    h(Inp,{label:'Contraseña *',value:f.password,onChange:function(v){upd('password',v)},placeholder:'Mínimo 4 caracteres',type:'password'}),
+    h('div',{style:{marginBottom:10}},
+      h('div',{style:{fontSize:9,color:C.m,marginBottom:5,textTransform:'uppercase'}},'Rol'),
+      h('div',{style:{display:'flex',gap:6}},
+        roles.map(function(r){return h('button',{key:r.v,onClick:function(){upd('role',r.v)},
+          style:{flex:1,padding:'7px 6px',borderRadius:7,border:'1px solid '+(f.role===r.v?C.ac:C.b),
+                 background:f.role===r.v?C.ac+'18':C.s3,color:f.role===r.v?C.ac:C.t2,cursor:'pointer',fontSize:10,fontWeight:f.role===r.v?700:400}},r.l)})
+      )
+    ),
+    h(Inp,{label:'Cargo (opcional)',value:f.cargo,onChange:function(v){upd('cargo',v)},placeholder:'Ej: Jefe de Producción'}),
+    h('div',{style:{display:'flex',gap:8,justifyContent:'flex-end',marginTop:4}},
+      h(Btn,{onClick:p.onClose,color:C.m},'Cancelar'),
+      h('button',{onClick:guardar,style:{background:C.g,color:'#000',border:'none',borderRadius:8,padding:'10px 18px',cursor:'pointer',fontWeight:700,fontSize:12}},'Guardar Usuario')
+    )
+  );
+}
+
 function App(){
   var cache=lc(),cfg=lcfg();
   var _ses=loadSession();
@@ -1599,7 +1811,24 @@ function App(){
 
   var coR=useRef(coches),tuR=useRef(tunnels),cfR=useRef(config),hiR=useRef(history),tlR=useRef(tLogs),alR=useRef(alarms),stR=useRef(null);
   var usersRef=useRef(USERS); // se actualiza cuando llegan usuarios de Sheets
-  var escRef=useRef({}); // { [alarmId]: {iv, firedAt} } — alarmas escalantes activas
+  var escRef=useRef({});
+  var _usersTick=useState(0);var setUsersTick=_usersTick[1];
+  var _editingUser=useState(null);var editingUser=_editingUser[0],setEditingUser=_editingUser[1];
+  // Actualizar usuarios y sincronizar a Sheets
+  function updateUsers(newList){
+    usersRef.current=newList;
+    setUsersTick(function(n){return n+1});
+    var url=cfR.current.scriptUrl||getGUrl()||SCRIPT_URL||'';
+    if(url)fetch(url,{method:'POST',body:JSON.stringify({action:'syncUsuarios',users:newList}),headers:{'Content-Type':'text/plain'}}).catch(function(){});
+  }
+  function saveUser(u){
+    var list=usersRef.current;
+    var exists=list.some(function(x){return x.id===u.id});
+    updateUsers(exists?list.map(function(x){return x.id===u.id?u:x}):[...list,u]);
+  }
+  function deleteUser(id){
+    updateUsers(usersRef.current.filter(function(x){return x.id!==id}));
+  } // { [alarmId]: {iv, firedAt} } — alarmas escalantes activas
   useEffect(function(){coR.current=coches},[coches]);
   useEffect(function(){tuR.current=tunnels},[tunnels]);
   useEffect(function(){cfR.current=config;scfg(config);if(config.scriptUrl)setGUrl(config.scriptUrl)},[config]);
@@ -1631,7 +1860,7 @@ function App(){
         var alreadyPending=alR.current.some(function(a){return a.tunnelId===t.id&&a.type==='temp-check'&&!a.ack&&n-a.createdAt<intervalMs});
         if(sinceLastLog>=intervalMs&&!alreadyPending){
           na.push({id:gid(),type:'temp-check',tunnelId:t.id,cocheId:null,
-            msg:'🌡 REVISAR TEMPERATURA — '+t.name+' ('+inT.length+' coches · ultimo registro: '+(lastLog?elpS(sinceLastLog)+' atrás':'sin registros')+')',
+            msg:'🌡 '+t.name+' — Registrar temperatura ('+elpS(sinceLastLog)+' sin registro · '+inT.length+' coche'+(inT.length!==1?'s':'')+' dentro). Abre el túnel y agrega lectura para parar esta alarma.',
             createdAt:n,ack:false});
         }
       });
@@ -1697,7 +1926,10 @@ function App(){
     fetch(url+'?t='+Date.now())
       .then(function(r){return r.json()})
       .then(function(d){
-        if(d.usuarios&&d.usuarios.length){var m=mapU(d.usuarios);if(m.length)usersRef.current=m;}
+        if(d.usuarios&&d.usuarios.length){
+          var m=mapU(d.usuarios);
+          if(m.length){usersRef.current=m;setUsersTick(function(n){return n+1});
+            if(user){var upd=m.find(function(u){return u.email===user.email});if(upd){setUser(upd);saveSession(upd);}}}}
         if(d.coches){var nc=mapC(d.coches);coR.current=nc;setCoches(nc);}
         if(d.tuneles&&d.tuneles.length){var nt=mapT(d.tuneles);tuR.current=nt;setTunnels(nt);}
         if(d.historial){var nh=mapH(d.historial);hiR.current=nh;setHistory(nh);}
@@ -1730,7 +1962,10 @@ function App(){
       if(nt!==null){tuR.current=nt;setTunnels(nt);}
       if(nh!==null){hiR.current=nh;setHistory(nh);}
       if(ntl!==null){tlR.current=ntl;setTLogs(ntl);}
-      if(d.usuarios&&d.usuarios.length){var m=mapU(d.usuarios);if(m.length)usersRef.current=m;}
+      if(d.usuarios&&d.usuarios.length){
+          var m=mapU(d.usuarios);
+          if(m.length){usersRef.current=m;setUsersTick(function(n){return n+1});
+            if(user){var upd=m.find(function(u){return u.email===user.email});if(upd){setUser(upd);saveSession(upd);}}}}
     }).catch(function(){});
   }
 
@@ -1822,7 +2057,10 @@ function App(){
         if(nt!==null){tuR.current=nt;setTunnels(nt);}
         if(nh!==null){hiR.current=nh;setHistory(nh);}
         if(ntl!==null){tlR.current=ntl;setTLogs(ntl);}
-        if(d.usuarios&&d.usuarios.length){var m=mapU(d.usuarios);if(m.length)usersRef.current=m;}
+        if(d.usuarios&&d.usuarios.length){
+          var m=mapU(d.usuarios);
+          if(m.length){usersRef.current=m;setUsersTick(function(n){return n+1});
+            if(user){var upd=m.find(function(u){return u.email===user.email});if(upd){setUser(upd);saveSession(upd);}}}}
         // Guardar en cache local lo que vino de Sheets
         sc({
           coches:nc||coR.current,
@@ -1923,7 +2161,17 @@ function App(){
     }
   }
   function onBatch(tid,ids,et){var nc=coches.map(function(c){return ids.indexOf(c.id)>-1?Object.assign({},c,{status:'en-tunel',tunnelId:tid,entryTime:et}):c});coR.current=nc;setCoches(nc);autoSync(nc,null)}
-  function saveTemp(log){setTLogs(function(prev){var nl=[log].concat(prev);tlR.current=nl;return nl});if(config.scriptUrl)fetch(config.scriptUrl,{method:'POST',body:JSON.stringify(Object.assign({action:'logTemp'},log)),headers:{'Content-Type':'text/plain'}}).catch(function(){})}
+  function saveTemp(log){
+    setTLogs(function(prev){var nl=[log].concat(prev);tlR.current=nl;return nl});
+    // Auto-ack alarmas de temp-check pendientes para este túnel
+    // Cualquier operador que registre temperatura apaga la alarma
+    alR.current.filter(function(a){
+      return !a.ack&&a.type==='temp-check'&&a.tunnelId===log.tunnelId;
+    }).forEach(function(a){ackAlarm(a.id);});
+    // Sync a Sheets
+    var url=cfR.current.scriptUrl||getGUrl()||SCRIPT_URL||'';
+    if(url)fetch(url,{method:'POST',body:JSON.stringify(Object.assign({action:'logTemp'},log)),headers:{'Content-Type':'text/plain'}}).catch(function(){});
+  }
   function ackAlarm(id){
     // Detener alarma escalante si existe
     if(escRef.current[id]){clearInterval(escRef.current[id].iv);delete escRef.current[id];}
@@ -1934,7 +2182,20 @@ function App(){
     var nc=isNew?[...coR.current,c]:coR.current.map(function(x){return x.id===c.id?c:x});
     coR.current=nc;setCoches(nc);
     setShowForm(false);setEditC(null);
-    // Sync a Sheets: autoSync envía todos los coches
+    // Sync rápido directo (como logTemp) — sin debounce
+    var url=cfR.current.scriptUrl||getGUrl()||SCRIPT_URL||'';
+    if(url){
+      setSyncSt('syncing');setSMsg('Guardando coche...');
+      fetch(url,{method:'POST',body:JSON.stringify({action:'saveCoche',coche:c}),headers:{'Content-Type':'text/plain'}})
+        .then(function(r){return r.json()})
+        .then(function(d){
+          if(d.ok){setSyncSt('ok');setSMsg('✅ Coche guardado en Sheets');}
+          else{setSyncSt('error');setSMsg('⚠ Error: '+d.error);}
+          setTimeout(function(){setSyncSt('idle');setSMsg('');},4000);
+        })
+        .catch(function(){setSyncSt('error');setSMsg('⚠ Sin conexion — guardado local');setTimeout(function(){setSyncSt('idle');setSMsg('');},4000);});
+    }
+    // autoSync como respaldo (actualiza estado completo en background)
     autoSync(nc,null);
   }
   function saveTunnel(t){var nt=editT?tunnels.map(function(x){return x.id===t.id?t:x}):[...tunnels,t];tuR.current=nt;setTunnels(nt);autoSync(null,nt);setShowTForm(false);setEditT(null)}
@@ -2315,11 +2576,11 @@ function App(){
       ),
       // Content
       h('div',{className:'main-content',style:{flex:1,overflow:'auto'}},
-        view==='dashboard'&&h(VDashboard,{coches:coches,tunnels:tunnels,tLogs:tLogs,alarms:alarms,drag:drag,setDrag:setDrag,dO:dragOver,setDO:setDragOver,now:now,setCoches:setCoches,sync:autoSync,onReady:onReady,onFree:onFree,onMaster:onMaster,onVaciar:onVaciar,onRelease:onRelease,setCarga:setShowCarga,setBatch:setShowBatch,setVerif:setShowVerif,ackAlarm:ackAlarm}),
+        view==='dashboard'&&h(VDashboard,{coches:coches,tunnels:tunnels,tLogs:tLogs,alarms:alarms,history:history,drag:drag,setDrag:setDrag,dO:dragOver,setDO:setDragOver,now:now,setCoches:setCoches,sync:autoSync,onReady:onReady,onFree:onFree,onMaster:onMaster,onVaciar:onVaciar,onRelease:onRelease,setCarga:setShowCarga,setBatch:setShowBatch,setVerif:setShowVerif,ackAlarm:ackAlarm}),
         view==='temps'&&h(VTemps,{coches:coches,tunnels:tunnels,tLogs:tLogs,now:now,user:user&&user.name,userCargo:user&&user.cargo,userRole:user&&user.role,onSave:saveTemp}),
         view==='historial'&&h(VHistorial,{history:history,coches:coches,tunnels:tunnels,tLogs:tLogs}),
         view==='ia'&&h(VIA,{msgs:aiMsgs,loading:aiLoad,send:sendAI}),
-        view==='gestion'&&h(VGestion,{coches:coches,tunnels:tunnels,hist:history,tLogs:tLogs,cfg:config,setCfg:setConfig,syncing:syncing,sMsg:sMsg,setSMsg:setSMsg,load:load,mSync:mSync,openForm:function(c){setEditC(c||null);setShowForm(true)},setCoches:setCoches,sync:autoSync,isAdmin:isAdmin,openTunnelForm:function(t){setEditT(t||null);setShowTForm(true)},setTunnels:setTunnels})
+        view==='gestion'&&h(VGestion,{coches:coches,tunnels:tunnels,hist:history,tLogs:tLogs,cfg:config,setCfg:setConfig,syncing:syncing,sMsg:sMsg,setSMsg:setSMsg,load:load,mSync:mSync,openForm:function(c){setEditC(c||null);setShowForm(true)},setCoches:setCoches,sync:autoSync,isAdmin:isAdmin,openTunnelForm:function(t){setEditT(t||null);setShowTForm(true)},setTunnels:setTunnels,users:usersRef.current,editUser:function(u){setEditingUser(u===undefined?null:u)},deleteUser:deleteUser})
       )
     ),
     // Modales
@@ -2329,6 +2590,7 @@ function App(){
     showBatch&&h(MBatch,{t:showBatch,libres:coches.filter(function(c){return c.status==='libre'&&(c.units||0)>0}),onOk:onBatch,onClose:function(){setShowBatch(null)}}),
     showVerif&&h(MVerif,{t:showVerif,inT:coches.filter(function(c){return c.tunnelId===showVerif.id&&c.status==='en-tunel'}),user:user&&user.name,onSave:saveTemp,onRelease:onRelease,onClose:function(){setShowVerif(null)}}),
     shareWA&&h(MShareWA,{data:shareWA,onClose:function(){setShareWA(null)}}),
+    editingUser!==null&&h(MUserForm,{user:editingUser||null,onSave:saveUser,onClose:function(){setEditingUser(null)}}),
     showResumen&&h(MResumenTurno,{coches:coches,tunnels:tunnels,tLogs:tLogs,onClose:function(){setShowResumen(false)}}),
     // Bottom nav mobile
     h('div',{className:'bottom-nav'},
