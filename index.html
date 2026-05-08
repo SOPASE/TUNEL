@@ -1452,6 +1452,23 @@ function VConfig(p){
   var SUB={fontSize:9,color:C.m,marginTop:2};
 
   return h('div',{style:{maxWidth:640}},
+    // ── Acciones rápidas para móvil ──
+    h('div',{style:{display:'flex',gap:8,marginBottom:14}},
+      h('button',{
+        onClick:function(){p.mSync&&p.mSync()},
+        disabled:p.syncing,
+        style:{flex:1,background:C.g+'15',border:'1px solid '+C.g+'50',color:C.g,borderRadius:8,padding:'10px',cursor:'pointer',fontSize:12,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
+        h('span',{style:{fontSize:14,animation:p.syncing?'spin 1s linear infinite':''}},'⟳'),
+        p.syncing?'Sincronizando...':'Sincronizar Sheets'
+      ),
+      h('button',{
+        onClick:p.onLogout,
+        style:{flex:1,background:C.d+'15',border:'1px solid '+C.d+'50',color:C.d,borderRadius:8,padding:'10px',cursor:'pointer',fontSize:12,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',gap:6}},
+        h('span',null,'→'),
+        'Cerrar Sesión'
+      )
+    ),
+    p.sMsg&&h('div',{style:{background:C.g+'10',border:'1px solid '+C.g+'30',borderRadius:6,padding:'6px 10px',marginBottom:12,fontSize:11,color:C.g,textAlign:'center'}},p.sMsg),
 
     // ── GOOGLE SHEETS ──
     h('div',{style:BOX},
@@ -1715,7 +1732,7 @@ function VGestion(p){
         })
       )
     ),
-    tab==='config'&&p.isAdmin&&h(VConfig,{cfg:p.cfg,setCfg:p.setCfg,syncing:p.syncing,sMsg:p.sMsg,setSMsg:p.setSMsg,load:p.load,mSync:p.mSync,hist:p.hist,coches:p.coches,tunnels:p.tunnels,tLogs:p.tLogs,users:p.users,editUser:p.editUser,deleteUser:p.deleteUser})
+    tab==='config'&&p.isAdmin&&h(VConfig,{cfg:p.cfg,setCfg:p.setCfg,syncing:p.syncing,sMsg:p.sMsg,setSMsg:p.setSMsg,load:p.load,mSync:p.mSync,hist:p.hist,coches:p.coches,tunnels:p.tunnels,tLogs:p.tLogs,users:p.users,editUser:p.editUser,deleteUser:p.deleteUser,onLogout:p.onLogout})
   );
 }
 
@@ -2687,40 +2704,48 @@ function App(){
     ),
     // Main
       h('div',{style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}},
-      // Header compacto
-      h('div',{style:{background:C.s1,borderBottom:'1px solid '+C.b,padding:'5px 10px',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}},
-        h('div',{style:{display:'flex',alignItems:'center',gap:8}},
-          sMsg&&h('span',{style:{fontSize:9,color:syncSt==='ok'?C.g:syncSt==='error'?C.d:syncSt==='syncing'?C.ac:C.m,display:'flex',alignItems:'center',gap:3}},
-            syncSt==='syncing'&&h('span',{style:{display:'inline-block',animation:'spin 1s linear infinite',fontSize:10,fontFamily:'monospace'}},'↻'),
-            syncSt==='ok'&&h('span',null,'✅ '),
-            syncSt==='error'&&h('span',null,'⚠ '),
-            sMsg
+      // Header ultra-compacto para móvil
+      h('div',{style:{background:C.s1,borderBottom:'1px solid '+C.b,padding:'4px 8px',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0,minHeight:36}},
+        // Izquierda: sync status + pantalla (solo iconos)
+        h('div',{style:{display:'flex',alignItems:'center',gap:5}},
+          // Sync: solo icono con color
+          h('span',{
+            onClick:function(){if(syncSt==='idle'&&cfR.current.scriptUrl)mSync()},
+            title:sMsg||'Sincronizar Sheets',
+            style:{fontSize:14,cursor:'pointer',lineHeight:1}},
+            syncSt==='syncing'?h('span',{style:{display:'inline-block',animation:'spin 1s linear infinite',color:C.ac}},'↻')
+            :syncSt==='ok'?h('span',{style:{color:C.g}},'✅')
+            :syncSt==='error'?h('span',{style:{color:C.d}},'⚠')
+            :cfR.current&&cfR.current.scriptUrl?h('span',{style:{color:C.m}},'⟳')
+            :null
           ),
-          cfR.current&&cfR.current.scriptUrl&&syncSt==='idle'&&!sMsg&&h('span',{style:{fontSize:8,color:C.m,cursor:'pointer'},onClick:function(){mSync()}},'⟳ Sheets'),
-          // Monitor = mantiene pantalla encendida (útil en tablet fija de planta)
+          // Pantalla: solo icono
           h('button',{
             onClick:function(){wakeOn?disableWakeLock():enableWakeLock()},
-            title:'Pantalla siempre encendida — activa en la tablet o monitor de la planta para que las alarmas no se corten',
-            style:{background:wakeOn?C.g+'20':'none',border:'1px solid '+(wakeOn?C.g:C.b),color:wakeOn?C.g:C.m,borderRadius:5,padding:'2px 7px',cursor:'pointer',fontSize:9,fontWeight:wakeOn?700:400,display:'flex',alignItems:'center',gap:3,whiteSpace:'nowrap'}},
-            h('span',null,wakeOn?'📺 Pantalla ON':'📺 Pantalla')
+            title:wakeOn?'Pantalla siempre encendida (activo)':'Mantener pantalla encendida',
+            style:{background:wakeOn?C.g+'20':'none',border:'1px solid '+(wakeOn?C.g:C.b+'80'),
+                   borderRadius:5,padding:'2px 5px',cursor:'pointer',fontSize:11,lineHeight:1}},
+            '📺'
           )
         ),
-        h('div',{className:'header-stats',style:{display:'flex',gap:4,alignItems:'center',flexWrap:'nowrap',overflow:'hidden'}},
-          [['Libres',coches.filter(function(c){return c.status==='libre'}).length,C.t2],
-           ['Tunel',coches.filter(function(c){return c.status==='en-tunel'}).length,C.w],
-           [lbsT.toLocaleString()+' lbs',null,C.g],
-           ['Master',coches.filter(function(c){return c.status==='masterizando'}).length,'#aa88ff']]
-          .map(function(row){return h('div',{key:row[0],style:{background:C.s3,border:'1px solid '+C.b,borderRadius:5,padding:'2px 6px',textAlign:'center',flexShrink:0}},
-            h('div',{style:{fontFamily:'monospace',fontSize:11,fontWeight:700,color:row[2]}},row[1]!==null?String(row[1]):''),
-            h('div',{style:{fontSize:7,color:C.m}},row[0])
+        // Derecha: stats compactos
+        h('div',{style:{display:'flex',gap:3,alignItems:'center'}},
+          [
+            {n:coches.filter(function(c){return c.status==='libre'}).length,    l:'L', c:C.t2},
+            {n:coches.filter(function(c){return c.status==='en-tunel'}).length,  l:'T', c:C.w},
+            {n:lbsT.toLocaleString(),                                            l:'lbs',c:C.g,lbs:true},
+            {n:coches.filter(function(c){return c.status==='masterizando'}).length,l:'M',c:'#aa88ff'},
+          ].map(function(row){return h('div',{key:row.l,style:{background:C.s3,border:'1px solid '+C.b,borderRadius:5,padding:'2px 5px',textAlign:'center',minWidth:row.lbs?42:22}},
+            h('div',{style:{fontFamily:'monospace',fontSize:row.lbs?9:11,fontWeight:700,color:row.c,lineHeight:1.1}},String(row.n)),
+            h('div',{style:{fontSize:6,color:C.m,lineHeight:1.1}},row.l)
           )}),
-          unacked.length>0&&h('div',{style:{background:C.d+'18',border:'1px solid '+C.d+'50',borderRadius:5,padding:'2px 6px',textAlign:'center',flexShrink:0,animation:'pulse 1.5s infinite'}},
-            h('div',{style:{fontFamily:'monospace',fontSize:11,fontWeight:700,color:C.d}},unacked.length),
-            h('div',{style:{fontSize:7,color:C.d}},'Alarmas')
+          unacked.length>0&&h('div',{style:{background:C.d+'18',border:'1px solid '+C.d+'50',borderRadius:5,padding:'2px 5px',textAlign:'center',minWidth:22,animation:'pulse 1.5s infinite'}},
+            h('div',{style:{fontFamily:'monospace',fontSize:11,fontWeight:700,color:C.d,lineHeight:1.1}},unacked.length),
+            h('div',{style:{fontSize:6,color:C.d,lineHeight:1.1}},'⚠')
           ),
-          h('button',{onClick:function(){setShowResumen(true)},title:user&&user.name,style:{background:C.s3,border:'1px solid '+C.b,borderRadius:6,padding:'4px 8px',cursor:'pointer',display:'flex',alignItems:'center',gap:3,flexShrink:0,marginLeft:2}},
-            h('span',{style:{fontSize:14}},'📋'),
-            h('span',{style:{fontSize:8,color:C.t2,maxWidth:60,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},user&&user.name.split(' ')[0])
+          h('button',{onClick:function(){setShowResumen(true)},title:user&&user.name,
+            style:{background:C.s3,border:'1px solid '+C.b,borderRadius:6,padding:'3px 6px',cursor:'pointer',flexShrink:0,fontSize:9,color:C.t2,maxWidth:50,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},
+            user&&user.name.split(' ')[0]
           )
         )
       ),
@@ -2737,7 +2762,7 @@ function App(){
         view==='temps'&&h(VTemps,{coches:coches,tunnels:tunnels,tLogs:tLogs,now:now,user:user&&user.name,userCargo:user&&user.cargo,userRole:user&&user.role,onSave:saveTemp}),
         view==='historial'&&h(VHistorial,{history:history,coches:coches,tunnels:tunnels,tLogs:tLogs}),
         view==='ia'&&h(VIA,{msgs:aiMsgs,loading:aiLoad,send:sendAI}),
-        view==='gestion'&&h(VGestion,{coches:coches,tunnels:tunnels,hist:history,tLogs:tLogs,cfg:config,setCfg:setConfig,syncing:syncing,sMsg:sMsg,setSMsg:setSMsg,load:load,mSync:mSync,openForm:function(c){setEditC(c||null);setShowForm(true)},setCoches:setCoches,sync:autoSync,isAdmin:isAdmin,openTunnelForm:function(t){setEditT(t||null);setShowTForm(true)},setTunnels:setTunnels,users:usersRef.current,editUser:function(u){setEditingUser(u!==undefined?u:false)},deleteUser:deleteUser})
+        view==='gestion'&&h(VGestion,{coches:coches,tunnels:tunnels,hist:history,tLogs:tLogs,cfg:config,setCfg:setConfig,syncing:syncing,sMsg:sMsg,setSMsg:setSMsg,load:load,mSync:mSync,openForm:function(c){setEditC(c||null);setShowForm(true)},setCoches:setCoches,sync:autoSync,isAdmin:isAdmin,openTunnelForm:function(t){setEditT(t||null);setShowTForm(true)},setTunnels:setTunnels,users:usersRef.current,editUser:function(u){setEditingUser(u!==undefined?u:false)},deleteUser:deleteUser,onLogout:function(){clearSession();setUser(null);setView('login');}})
       )
     ),
     // Modales
