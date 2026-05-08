@@ -627,10 +627,9 @@ function VDashboard(p){
   var drag=p.drag,setDrag=p.setDrag,dO=p.dO,setDO=p.setDO;
   var _confLib=useState(null);var confLib=_confLib[0],setConfLib=_confLib[1]; // tunnel id pendiente de confirmar liberacion
   var unacked=p.alarms.filter(function(a){return !a.ack});
-  function dropT(e,tid){e.preventDefault();if(!drag)return;var t=tunnels.find(function(x){return x.id===tid});if(!t)return;var occ=coches.filter(function(c){return c.tunnelId===tid&&c.status==='en-tunel'}).length;if(occ>=t.capacityCoches){alert('Tunel lleno');setDrag(null);setDO(null);return}var now2=Date.now();var nc=coches.map(function(c){if(c.id!==drag.id)return c;// Si venía de otro tunel, acumular ese tiempo antes de reasignar
-var prevMs=c.entryTime&&c.status==='en-tunel'?(now2-c.entryTime):0;return Object.assign({},c,{status:'en-tunel',tunnelId:tid,tunnelName:t.name,entryTime:now2,accumulatedTunnelMs:(c.accumulatedTunnelMs||0)+prevMs});});p.setCoches(nc);p.sync(nc,null);setDrag(null);setDO(null)}
-  function assignTunel(cid,tid,tname){var now2=Date.now();var nc=coches.map(function(c){if(c.id!==cid)return c;var prevMs=c.entryTime&&c.status==='en-tunel'?(now2-c.entryTime):0;return Object.assign({},c,{status:'en-tunel',tunnelId:tid,tunnelName:tname,entryTime:now2,accumulatedTunnelMs:(c.accumulatedTunnelMs||0)+prevMs});});p.setCoches(nc);p.sync(nc,null)}
-  function dropF(e){e.preventDefault();if(!drag)return;var nc=coches.map(function(c){return c.id===drag.id?Object.assign({},c,{status:'libre',tunnelId:null,entryTime:null}):c});p.setCoches(nc);p.sync(nc,null);setDrag(null);setDO(null)}
+  function dropT(e,tid){e.preventDefault();if(!drag)return;var t=tunnels.find(function(x){return x.id===tid});if(!t)return;var occ=coches.filter(function(c){return c.tunnelId===tid&&c.status==='en-tunel'}).length;if(occ>=t.capacityCoches){alert('Tunel lleno');setDrag(null);setDO(null);return}var now2=Date.now();var updC=null;var nc=coches.map(function(c){if(c.id!==drag.id)return c;var prevMs=c.entryTime&&c.status==='en-tunel'?(now2-c.entryTime):0;updC=Object.assign({},c,{status:'en-tunel',tunnelId:tid,tunnelName:t.name,entryTime:now2,accumulatedTunnelMs:(c.accumulatedTunnelMs||0)+prevMs});return updC;});p.setCoches(nc);if(updC)p.syncRapido(updC);p.sync(nc,null);setDrag(null);setDO(null)}
+  function assignTunel(cid,tid,tname){var now2=Date.now();var updC=null;var nc=coches.map(function(c){if(c.id!==cid)return c;var prevMs=c.entryTime&&c.status==='en-tunel'?(now2-c.entryTime):0;updC=Object.assign({},c,{status:'en-tunel',tunnelId:tid,tunnelName:tname,entryTime:now2,accumulatedTunnelMs:(c.accumulatedTunnelMs||0)+prevMs});return updC;});p.setCoches(nc);if(updC)p.syncRapido(updC);p.sync(nc,null)}
+  function dropF(e){e.preventDefault();if(!drag)return;var now2=Date.now();var updC=null;var nc=coches.map(function(c){if(c.id!==drag.id)return c;var sessionMs=c.entryTime&&c.status==='en-tunel'?now2-c.entryTime:0;updC=Object.assign({},c,{status:'libre',tunnelId:null,entryTime:null,exitTime:now2,accumulatedTunnelMs:(c.accumulatedTunnelMs||0)+sessionMs,outsideStartTime:now2});return updC;});p.setCoches(nc);if(updC)p.syncRapido(updC);p.sync(nc,null);setDrag(null);setDO(null)}
   return h('div',{className:'dash-grid',style:{padding:12,display:'grid',gridTemplateColumns:'165px 1fr 160px 155px',gap:10,minHeight:'calc(100vh - 90px)'}},
     // Zona Libre
     h('div',{onDragOver:function(e){e.preventDefault()},onDrop:dropF,onDragEnter:function(){setDO('free')},onDragLeave:function(){setDO(null)},style:{background:C.s1,border:'2px dashed '+(dO==='free'?C.ac:C.b),borderRadius:10,padding:10}},
@@ -1099,6 +1098,7 @@ function VTemps(p){
 
 function VHistorial(p){
   var _q=useState('');var q=_q[0],setQ=_q[1];
+  var _qLote=useState('');var qLote=_qLote[0],setQLote=_qLote[1]; // filtro dedicado por lote
   var _grp=useState('tunel');var grp=_grp[0],setGrp=_grp[1];
   var _exp=useState({});var exp=_exp[0],setExp=_exp[1];
   // Filtros mejorados
@@ -1111,8 +1111,8 @@ function VHistorial(p){
   var _showFilters=useState(false);var showFilters=_showFilters[0],setShowFilters=_showFilters[1];
   function togExp(k){setExp(function(prev){var o=Object.assign({},prev);o[k]=!o[k];return o})}
   function togArr(setFn,val){setFn(function(prev){return prev.indexOf(val)>-1?prev.filter(function(x){return x!==val}):prev.concat([val])})};
-  function clearFilters(){setQ('');setFDates([]);setFShifts([]);setFTunels([]);setFProds([]);setFLotes([]);setFUser('');}
-  var activeFilters=[q,fUser].filter(Boolean).length+fDates.length+fShifts.length+fTunels.length+fProds.length+fLotes.length;
+  function clearFilters(){setQ('');setQLote('');setFDates([]);setFShifts([]);setFTunels([]);setFProds([]);setFLotes([]);setFUser('');}
+  var activeFilters=[q,qLote,fUser].filter(Boolean).length+fDates.length+fShifts.length+fTunels.length+fProds.length+fLotes.length;
   // Opciones únicas para selects
   var allProducts=[...new Set(p.history.map(function(h){return h.productName}).filter(Boolean))].sort();
   var allTunels2=[...new Set(p.history.map(function(h){return h.tunnelName}).filter(Boolean))].sort();
@@ -1128,6 +1128,7 @@ function VHistorial(p){
     if(fTunels.length&&fTunels.indexOf(hh.tunnelName||'')===-1)return false;
     if(fProds.length&&fProds.indexOf(hh.productName||'')===-1)return false;
     if(fLotes.length&&fLotes.indexOf(hh.lote||'')===-1)return false;
+    if(qLote.trim()&&!(hh.lote||'').toLowerCase().includes(qLote.toLowerCase().trim()))return false;
     if(fUser&&(hh.userName||'').toLowerCase().indexOf(fUser.toLowerCase())===-1)return false;
     return true;
   });
@@ -1179,9 +1180,21 @@ function VHistorial(p){
         h('div',{style:{fontSize:10,color:C.m,marginTop:2}},'Total libras procesadas: '+totalLbs.toLocaleString()+' lbs'+(activeFilters?' · '+activeFilters+' filtro(s) activo(s)':''))
       ),
       h('div',{style:{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}},
-        h('input',{value:q,onChange:function(e){setQ(e.target.value)},placeholder:'Buscar coche, producto...',style:{background:C.s3,border:'1px solid '+C.b,borderRadius:6,padding:'7px 12px',color:C.t,fontSize:11,width:180}}),
-        h('button',{onClick:function(){setShowFilters(function(p){return !p})},style:{background:showFilters?C.ac+'20':C.s3,border:'1px solid '+(activeFilters?C.ac:C.b),color:activeFilters?C.ac:C.t2,padding:'7px 12px',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:activeFilters?700:400}},activeFilters?'🔍 Filtros ('+activeFilters+')':'🔍 Filtros'),
-        activeFilters>0&&h('button',{onClick:clearFilters,style:{background:C.d+'15',border:'1px solid '+C.d+'40',color:C.d,padding:'7px 10px',borderRadius:6,cursor:'pointer',fontSize:11}},'✕ Limpiar'),
+        h('input',{value:q,onChange:function(e){setQ(e.target.value)},placeholder:'Buscar coche, producto...',style:{background:C.s3,border:'1px solid '+C.b,borderRadius:6,padding:'7px 12px',color:C.t,fontSize:11,width:160}}),
+        // ── Filtro de lote siempre visible ──
+        h('div',{style:{position:'relative',display:'flex',alignItems:'center'}},
+          h('span',{style:{position:'absolute',left:8,fontSize:9,color:qLote?C.w:C.m,fontFamily:'monospace',fontWeight:700,userSelect:'none',pointerEvents:'none'}},'Lote:'),
+          h('input',{value:qLote,onChange:function(e){setQLote(e.target.value.toUpperCase())},
+            placeholder:'ej. 250507',
+            style:{background:qLote?C.w+'12':C.s3,border:'1px solid '+(qLote?C.w:C.b),
+                   borderRadius:6,padding:'7px 10px 7px 42px',color:qLote?C.w:C.t,
+                   fontSize:11,fontFamily:'monospace',fontWeight:qLote?700:400,width:130,
+                   letterSpacing:qLote?1:0}}),
+          qLote&&h('button',{onClick:function(){setQLote('')},
+            style:{position:'absolute',right:6,background:'none',border:'none',color:C.w,cursor:'pointer',fontSize:13,lineHeight:1,padding:0}},'×')
+        ),
+        h('button',{onClick:function(){setShowFilters(function(p){return !p})},style:{background:showFilters?C.ac+'20':C.s3,border:'1px solid '+(activeFilters?C.ac:C.b),color:activeFilters?C.ac:C.t2,padding:'7px 12px',borderRadius:6,cursor:'pointer',fontSize:11,fontWeight:activeFilters?700:400}},activeFilters?'Filtros ('+activeFilters+')':'Filtros'),
+        activeFilters>0&&h('button',{onClick:clearFilters,style:{background:C.d+'15',border:'1px solid '+C.d+'40',color:C.d,padding:'7px 10px',borderRadius:6,cursor:'pointer',fontSize:11}},'x Limpiar'),
         h(Btn,{onClick:xls,color:C.g},'Descargar Excel')
       )
     ),
@@ -1221,11 +1234,13 @@ function VHistorial(p){
         )
       ),
       // LOTES chips
-      allLotes.length>0&&h('div',{style:{marginBottom:10}},
-        h('div',{style:{fontSize:9,color:C.m,marginBottom:5,textTransform:'uppercase',letterSpacing:.8}},'🏷 Lote'),
-        h('div',{style:{display:'flex',flexWrap:'wrap',gap:4}},
-          allLotes.map(function(l){var on=fLotes.indexOf(l)>-1;return h('button',{key:l,onClick:function(){togArr(setFLotes,l)},style:{padding:'4px 9px',borderRadius:12,border:'1px solid '+(on?C.w:C.b),background:on?C.w+'20':C.s3,color:on?C.w:C.t2,cursor:'pointer',fontSize:10,fontFamily:'monospace',fontWeight:on?700:400}},l)})
-        )
+      h('div',{style:{marginBottom:10}},
+        h('div',{style:{fontSize:9,color:C.m,marginBottom:5,textTransform:'uppercase',letterSpacing:.8}},'Lote ('+allLotes.length+' en historial)'),
+        allLotes.length>0
+          ?h('div',{style:{display:'flex',flexWrap:'wrap',gap:4}},
+              allLotes.map(function(l){var on=fLotes.indexOf(l)>-1;return h('button',{key:l,onClick:function(){togArr(setFLotes,l)},style:{padding:'4px 9px',borderRadius:12,border:'1px solid '+(on?C.w:C.b),background:on?C.w+'20':C.s3,color:on?C.w:C.t2,cursor:'pointer',fontSize:10,fontFamily:'monospace',fontWeight:on?700:400}},l)})
+            )
+          :h('div',{style:{fontSize:9,color:C.m,fontStyle:'italic'}},'Aun no hay registros con lote. Usa el campo "Lote:" de la barra de busqueda para filtrar.')
       ),
       // OPERADOR
       h('div',null,
@@ -1952,29 +1967,19 @@ function App(){
         // 📈 Alarma escalante solo para product-ready
         if(a.type==='product-ready'){
           var firedAt=Date.now();
-          var phase=0; // 0=inicial, 1=60s, 2=30s, 3=15s urgente
           var escIv=setInterval(function(){
-            // Si ya fue ack, limpiar
             var cur=alR.current.find(function(x){return x.id===a.id});
             if(!cur||cur.ack){clearInterval(escIv);delete escRef.current[a.id];return;}
             var elapsed=Math.round((Date.now()-firedAt)/1000);
-            // Determinar fase según tiempo transcurrido
-            if(elapsed<180){phase=1;}        // < 3min: cada 60s
-            else if(elapsed<420){phase=2;}   // 3-7min: cada 30s
-            else{phase=3;}                   // > 7min: urgente
-            var shouldPlay=false;
-            if(phase===1&&elapsed%60<16)shouldPlay=true;
-            if(phase===2&&elapsed%30<16)shouldPlay=true;
-            if(phase===3&&elapsed%15<16)shouldPlay=true;
-            if(shouldPlay){
-              if(phase===3){playUrgentSound();}
-              else{playAlarmSound('product-ready');}
-              // Notificación push repetida si sigue sin atender
-              if(typeof Notification!=='undefined'&&Notification.permission==='granted'&&phase>=2){
-                try{new Notification('🔴 FREEZE CONTROL',{body:'⚠️ '+a.msg+' — SIN ATENDER',tag:a.id+'-esc',silent:false})}catch(e){}
-              }
+            // ALARMA CONTINUA cada 10s - escala en urgencia
+            if(elapsed<120){playAlarmSound('product-ready');}
+            else if(elapsed<300){playAlarmSound('product-ready');setTimeout(function(){playAlarmSound('outside-alert')},400);}
+            else{playUrgentSound();}
+            // Push al celular si sigue sin atender
+            if(elapsed>=60&&typeof Notification!=='undefined'&&Notification.permission==='granted'){
+              try{new Notification('FREEZE CONTROL',{body:'SIN ATENDER: '+a.msg,tag:a.id+'-r',silent:false})}catch(e){}
             }
-          },15000); // checar cada 15s
+          },10000); // cada 10 segundos - es una alarma, debe molestar
           escRef.current[a.id]={iv:escIv,firedAt:firedAt};
         }
         if(typeof Notification!=='undefined'&&Notification.permission==='granted'){
@@ -2193,24 +2198,33 @@ function App(){
   function login(e){e&&e.preventDefault();var u=usersRef.current.find(function(x){return x.email===email.toLowerCase().trim()&&x.password===pass});if(!u){setErr('Credenciales incorrectas');return}setUser(u);saveSession(u);setView('dashboard');setErr('');if(config.scriptUrl)load(config.scriptUrl)}
 
   // CRUD
-  function onReady(id){var c=coches.find(function(x){return x.id===id}),t=tunnels.find(function(x){return x.id===(c&&c.tunnelId)});if(c&&t){var outsMs=c.productLoadTime&&c.entryTime?c.entryTime-c.productLoadTime:0;var entry={id:gid(),number:c.number,productName:c.productName,unitType:c.unitType,units:c.units,weightPerUnit:c.weightPerUnit,weightUnit:c.weightUnit,totalLbs:c.totalLbs||0,tunnelId:t.id,tunnelName:t.name,tunnelType:t.type,productLoadTime:c.productLoadTime,entryTime:c.entryTime,exitTime:Date.now(),outsideMin:Math.round(outsMs/60000),horasEnTunel:((Date.now()-c.entryTime)/3600000).toFixed(2),shift:shiftOf(Date.now()),userName:user&&user.name,lote:c.lote||''};setHistory(function(prev){var nh=[entry].concat(prev);hiR.current=nh;return nh});if(config.scriptUrl)fetch(config.scriptUrl,{method:'POST',body:JSON.stringify(Object.assign({action:'logHistorial'},entry)),headers:{'Content-Type':'text/plain'}}).catch(function(){})}var nc=coches.map(function(x){return x.id===id?Object.assign({},x,{status:'masterizando',tunnelId:null,exitTime:Date.now(),masterTime:Date.now()}):x});coR.current=nc;setCoches(nc);autoSync(nc,null)}
+  // Sync rapido de un coche individual (como logTemp - sin debounce)
+  function syncCocheRapido(coche){
+    var url=cfR.current.scriptUrl||getGUrl()||SCRIPT_URL||'';
+    if(!url)return;
+    fetch(url,{method:'POST',body:JSON.stringify({action:'saveCoche',coche:coche}),headers:{'Content-Type':'text/plain'}})
+      .then(function(r){return r.json()})
+      .then(function(d){if(d.ok){setSyncSt('ok');setSMsg('Sheets OK '+new Date().toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'}));setTimeout(function(){setSyncSt('idle');setSMsg('');},3000);}})
+      .catch(function(){});
+  }
+
+  function onReady(id){var c=coches.find(function(x){return x.id===id}),t=tunnels.find(function(x){return x.id===(c&&c.tunnelId)});if(c&&t){var outsMs=c.productLoadTime&&c.entryTime?c.entryTime-c.productLoadTime:0;var entry={id:gid(),number:c.number,productName:c.productName,unitType:c.unitType,units:c.units,weightPerUnit:c.weightPerUnit,weightUnit:c.weightUnit,totalLbs:c.totalLbs||0,tunnelId:t.id,tunnelName:t.name,tunnelType:t.type,productLoadTime:c.productLoadTime,entryTime:c.entryTime,exitTime:Date.now(),outsideMin:Math.round(outsMs/60000),horasEnTunel:((Date.now()-c.entryTime)/3600000).toFixed(2),shift:shiftOf(Date.now()),userName:user&&user.name,lote:c.lote||''};setHistory(function(prev){var nh=[entry].concat(prev);hiR.current=nh;return nh});if(config.scriptUrl)fetch(config.scriptUrl,{method:'POST',body:JSON.stringify(Object.assign({action:'logHistorial'},entry)),headers:{'Content-Type':'text/plain'}}).catch(function(){})}
+  var updC=null;var nc=coches.map(function(x){if(x.id!==id)return x;updC=Object.assign({},x,{status:'masterizando',tunnelId:null,exitTime:Date.now(),masterTime:Date.now()});return updC;});coR.current=nc;setCoches(nc);if(updC)syncCocheRapido(updC);autoSync(nc,null)}
   function onFree(id){
     var n=Date.now();
+    var updC=null;
     var nc=coches.map(function(c){
       if(c.id!==id)return c;
-      // Acumular el tiempo de congelacion de esta sesion en el tunel
       var sessionMs=c.entryTime?n-c.entryTime:0;
       var accMs=(c.accumulatedTunnelMs||0)+sessionMs;
-      return Object.assign({},c,{
-        status:'libre',tunnelId:null,tunnelName:'',
-        entryTime:null,exitTime:n,
-        accumulatedTunnelMs:accMs,  // acumulado total en tuneles
-        outsideStartTime:n          // empieza a contar tiempo afuera desde AHORA
-      });
+      updC=Object.assign({},c,{status:'libre',tunnelId:null,tunnelName:'',entryTime:null,exitTime:n,accumulatedTunnelMs:accMs,outsideStartTime:n});
+      return updC;
     });
-    coR.current=nc;setCoches(nc);autoSync(nc,null);
+    coR.current=nc;setCoches(nc);
+    if(updC)syncCocheRapido(updC);
+    autoSync(nc,null);
   }
-  function onMaster(id){var nc=coches.map(function(c){return c.id===id?Object.assign({},c,{status:'masterizando',masterTime:Date.now()}):c});coR.current=nc;setCoches(nc);autoSync(nc,null)}
+  function onMaster(id){var updC=null;var nc=coches.map(function(c){if(c.id!==id)return c;updC=Object.assign({},c,{status:'masterizando',masterTime:Date.now()});return updC;});coR.current=nc;setCoches(nc);if(updC)syncCocheRapido(updC);autoSync(nc,null)}
   function onVaciar(id){
     var c=coches.find(function(x){return x.id===id});if(!c)return;
     var ci={id:gid(),number:c.number,ciclo:(c.ciclos||0)+1,productName:c.productName,unitType:c.unitType,units:c.units,weightPerUnit:c.weightPerUnit,weightUnit:c.weightUnit,totalLbs:c.totalLbs||0,productLoadTime:c.productLoadTime,entryTime:c.entryTime,exitTime:c.exitTime,masterTime:c.masterTime,masterMin:c.masterTime?Math.round((Date.now()-c.masterTime)/60000):0,shift:shiftOf(Date.now()),userName:user&&user.name,completedAt:Date.now()};
@@ -2580,7 +2594,7 @@ function App(){
   var unacked=alarms.filter(function(a){return !a.ack});
   var lbsT=coches.filter(function(c){return c.status==='en-tunel'}).reduce(function(a,c){return a+(c.totalLbs||0)},0);
   var isAdmin=user&&user.role==='admin';
-  var NAV=[{id:'dashboard',l:'Dashboard'},{id:'temps',l:'Temperaturas'},{id:'historial',l:'Historial'},{id:'ia',l:'IA Asistente'},{id:'gestion',l:'Gestion',adm:true}].filter(function(n){return !n.adm||isAdmin});
+  var NAV=[{id:'dashboard',l:'Inicio',icon:'❄'},{id:'temps',l:'Temperatura',icon:'🌡'},{id:'historial',l:'Historial',icon:'📋'},{id:'ia',l:'IA',icon:'🤖'},{id:'gestion',l:'Gestion',adm:true,icon:'⚙'}].filter(function(n){return !n.adm||isAdmin});
 
   // LOGIN
   if(!sheetsReady)return h('div',{style:{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:C.s1,gap:16}},
@@ -2662,28 +2676,23 @@ function App(){
       )
     ),
     // Main
-    h('div',{style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}},
-      // Header
-      h('div',{style:{background:C.s1,borderBottom:'1px solid '+C.b,padding:'7px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}},
-        h('div',{style:{display:'flex',alignItems:'center',gap:10}},
-          h('span',{style:{fontFamily:'monospace',fontSize:12,color:C.ac,fontWeight:700}},(NAV.find(function(n){return n.id===view})||{l:''}).l),
-          sMsg&&h('span',{style:{
-            fontSize:9,
-            color:syncSt==='ok'?C.g:syncSt==='error'?C.d:syncSt==='syncing'?C.ac:C.m,
-            display:'flex',alignItems:'center',gap:3
-          }},
+      h('div',{style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}},
+      // Header compacto
+      h('div',{style:{background:C.s1,borderBottom:'1px solid '+C.b,padding:'5px 10px',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}},
+        h('div',{style:{display:'flex',alignItems:'center',gap:8}},
+          sMsg&&h('span',{style:{fontSize:9,color:syncSt==='ok'?C.g:syncSt==='error'?C.d:syncSt==='syncing'?C.ac:C.m,display:'flex',alignItems:'center',gap:3}},
             syncSt==='syncing'&&h('span',{style:{display:'inline-block',animation:'spin 1s linear infinite',fontSize:10,fontFamily:'monospace'}},'↻'),
             syncSt==='ok'&&h('span',null,'✅ '),
             syncSt==='error'&&h('span',null,'⚠ '),
             sMsg
           ),
           cfR.current&&cfR.current.scriptUrl&&syncSt==='idle'&&!sMsg&&h('span',{style:{fontSize:8,color:C.m,cursor:'pointer'},onClick:function(){mSync()}},'⟳ Sheets'),
+          // Monitor = mantiene pantalla encendida (útil en tablet fija de planta)
           h('button',{
             onClick:function(){wakeOn?disableWakeLock():enableWakeLock()},
-            title:wakeOn?'Modo Monitor activo — click para desactivar':'Activar Modo Monitor (mantiene pantalla encendida y alarmas sonando)',
+            title:'Pantalla siempre encendida — activa en la tablet o monitor de la planta para que las alarmas no se corten',
             style:{background:wakeOn?C.g+'20':'none',border:'1px solid '+(wakeOn?C.g:C.b),color:wakeOn?C.g:C.m,borderRadius:5,padding:'2px 7px',cursor:'pointer',fontSize:9,fontWeight:wakeOn?700:400,display:'flex',alignItems:'center',gap:3,whiteSpace:'nowrap'}},
-            h('span',{style:{fontSize:10}},wakeOn?'📺':'📺'),
-            wakeOn?'Monitor ON':'Monitor'
+            h('span',null,wakeOn?'📺 Pantalla ON':'📺 Pantalla')
           )
         ),
         h('div',{className:'header-stats',style:{display:'flex',gap:4,alignItems:'center',flexWrap:'nowrap',overflow:'hidden'}},
@@ -2714,7 +2723,7 @@ function App(){
       ),
       // Content
       h('div',{className:'main-content',style:{flex:1,overflow:'auto'}},
-        view==='dashboard'&&h(VDashboard,{coches:coches,tunnels:tunnels,tLogs:tLogs,alarms:alarms,history:history,drag:drag,setDrag:setDrag,dO:dragOver,setDO:setDragOver,now:now,setCoches:setCoches,sync:autoSync,onReady:onReady,onFree:onFree,onMaster:onMaster,onVaciar:onVaciar,onRelease:onRelease,setCarga:setShowCarga,setBatch:setShowBatch,setVerif:setShowVerif,ackAlarm:ackAlarm}),
+        view==='dashboard'&&h(VDashboard,{coches:coches,tunnels:tunnels,tLogs:tLogs,alarms:alarms,history:history,drag:drag,setDrag:setDrag,dO:dragOver,setDO:setDragOver,now:now,setCoches:setCoches,sync:autoSync,syncRapido:syncCocheRapido,onReady:onReady,onFree:onFree,onMaster:onMaster,onVaciar:onVaciar,onRelease:onRelease,setCarga:setShowCarga,setBatch:setShowBatch,setVerif:setShowVerif,ackAlarm:ackAlarm}),
         view==='temps'&&h(VTemps,{coches:coches,tunnels:tunnels,tLogs:tLogs,now:now,user:user&&user.name,userCargo:user&&user.cargo,userRole:user&&user.role,onSave:saveTemp}),
         view==='historial'&&h(VHistorial,{history:history,coches:coches,tunnels:tunnels,tLogs:tLogs}),
         view==='ia'&&h(VIA,{msgs:aiMsgs,loading:aiLoad,send:sendAI}),
@@ -2722,7 +2731,20 @@ function App(){
       )
     ),
     // Modales
-    showCarga&&h(MCarga,{c:showCarga,onSave:function(c){var nc=coches.map(function(x){return x.id===c.id?c:x});setCoches(nc);autoSync(nc,null);setShowCarga(null)},onClose:function(){setShowCarga(null)}}),
+    showCarga&&h(MCarga,{c:showCarga,onSave:function(c){
+      var nc=coches.map(function(x){return x.id===c.id?c:x});
+      coR.current=nc;setCoches(nc);setShowCarga(null);
+      // Sync rapido directo (mismo patron que saveCoche)
+      var url=cfR.current.scriptUrl||getGUrl()||SCRIPT_URL||'';
+      if(url){
+        setSyncSt('syncing');setSMsg('Guardando carga...');
+        fetch(url,{method:'POST',body:JSON.stringify({action:'saveCoche',coche:c}),headers:{'Content-Type':'text/plain'}})
+          .then(function(r){return r.json()})
+          .then(function(d){setSyncSt('ok');setSMsg(d.ok?'Carga guardada en Sheets':'Error: '+(d.error||'?'));setTimeout(function(){setSyncSt('idle');setSMsg('');},4000);})
+          .catch(function(){setSyncSt('error');setSMsg('Sin conexion');setTimeout(function(){setSyncSt('idle');setSMsg('');},4000);});
+      }
+      autoSync(nc,null); // backup completo
+    },onClose:function(){setShowCarga(null)}}),
     showForm&&h(MCocheForm,{initial:editC,onSave:saveCoche,onClose:function(){setShowForm(false);setEditC(null)}}),
     showTForm&&h(MTunnelForm,{initial:editT,onSave:saveTunnel,onClose:function(){setShowTForm(false);setEditT(null)}}),
     showBatch&&h(MBatch,{t:showBatch,libres:coches.filter(function(c){return c.status==='libre'&&(c.units||0)>0}),onOk:onBatch,onClose:function(){setShowBatch(null)}}),
