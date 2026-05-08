@@ -1869,6 +1869,31 @@ function App(){
   var coR=useRef(coches),tuR=useRef(tunnels),cfR=useRef(config),hiR=useRef(history),tlR=useRef(tLogs),alR=useRef(alarms),stR=useRef(null);
   var usersRef=useRef(USERS); // se actualiza cuando llegan usuarios de Sheets
   var escRef=useRef({});
+  var wakeLockRef=useRef(null);
+  var _wakeOn=useState(false);var wakeOn=_wakeOn[0],setWakeOn=_wakeOn[1];
+
+  // ── WAKE LOCK: mantiene pantalla y tab activos (modo monitor) ──
+  function enableWakeLock(){
+    if(!('wakeLock' in navigator)){setWakeOn(false);return;}
+    navigator.wakeLock.request('screen').then(function(wl){
+      wakeLockRef.current=wl;setWakeOn(true);
+      wl.addEventListener('release',function(){setWakeOn(false);});
+    }).catch(function(){setWakeOn(false);});
+  }
+  function disableWakeLock(){
+    if(wakeLockRef.current){wakeLockRef.current.release();wakeLockRef.current=null;}
+    setWakeOn(false);
+  }
+  // Re-adquirir wake lock si la pantalla vuelve a estar visible
+  useEffect(function(){
+    function onVis(){
+      if(document.visibilityState==='visible'&&wakeOn&&!wakeLockRef.current){
+        enableWakeLock();
+      }
+    }
+    document.addEventListener('visibilitychange',onVis);
+    return function(){document.removeEventListener('visibilitychange',onVis);};
+  },[wakeOn]);
   var _usersTick=useState(0);var setUsersTick=_usersTick[1];
   var _editingUser=useState(false);var editingUser=_editingUser[0],setEditingUser=_editingUser[1];
   // Actualizar usuarios y sincronizar a Sheets
@@ -1953,10 +1978,28 @@ function App(){
           escRef.current[a.id]={iv:escIv,firedAt:firedAt};
         }
         if(typeof Notification!=='undefined'&&Notification.permission==='granted'){
-          var nopts={body:a.msg,tag:a.id,icon:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b1525'/%3E%3Ctext y='52' x='4' font-size='52' fill='%2300c8ff'%3E%E2%9D%84%3C/text%3E%3C/svg%3E",badge:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='52' x='4' font-size='52'%3E❄%3C/text%3E%3C/svg%3E",requireInteraction:a.type==='product-ready'||a.type==='outside-alert',vibrate:[200,100,200,100,200],silent:false};
-          if(navigator.serviceWorker&&navigator.serviceWorker.controller){navigator.serviceWorker.ready.then(function(r){r.showNotification('FREEZE CONTROL',nopts)}).catch(function(){new Notification('FREEZE CONTROL',nopts)})}else{new Notification('FREEZE CONTROL',nopts)}
+          var nopts={
+            body:a.msg,tag:a.id,
+            icon:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%230b1525'/%3E%3Ctext y='52' x='4' font-size='52' fill='%2300c8ff'%3E%E2%9D%84%3C/text%3E%3C/svg%3E",
+            badge:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='52' x='4' font-size='52'%3E❄%3C/text%3E%3C/svg%3E",
+            requireInteraction:true,
+            vibrate:[200,100,200,100,200],
+            silent:false,
+            // Datos para que el SW repita la notificacion si no se atiende
+            data:{
+              alarmId:a.id,body:a.msg,
+              repeatUntilAck:a.type==='product-ready'||a.type==='outside-alert',
+              repeatCount:0,acked:false
+            }
+          };
+          if(navigator.serviceWorker&&navigator.serviceWorker.controller){
+            navigator.serviceWorker.ready.then(function(r){r.showNotification('FREEZE CONTROL',nopts)}).catch(function(){new Notification('FREEZE CONTROL',nopts)})
+          }else{new Notification('FREEZE CONTROL',nopts)}
         }
         if(cfR.current.ntfyTopic)fetch('https://ntfy.sh/'+cfR.current.ntfyTopic,{method:'POST',headers:{'Title':'FREEZE CONTROL','Priority':'high','Content-Type':'text/plain'},body:a.msg}).catch(function(){});
+        // 📊 Registrar alarma en Google Sheets
+        var urlA=cfR.current.scriptUrl||getGUrl()||SCRIPT_URL||'';
+        if(urlA)fetch(urlA,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'logAlarma',id:a.id,type:a.type,tunnelId:a.tunnelId||'',tunnelName:(tuR.current.find(function(t){return t.id===a.tunnelId})||{name:''}).name,cocheId:a.cocheId||'',msg:a.msg,createdAt:a.createdAt||Date.now(),ntfyTopic:cfR.current.ntfyTopic||''})}).catch(function(){});
       })}
     },60000);
     return function(){clearInterval(iv)};
@@ -2245,9 +2288,25 @@ function App(){
     if(url)fetch(url,{method:'POST',body:JSON.stringify(Object.assign({action:'logTemp'},log)),headers:{'Content-Type':'text/plain'}}).catch(function(){});
   }
   function ackAlarm(id){
-    // Detener alarma escalante si existe
     if(escRef.current[id]){clearInterval(escRef.current[id].iv);delete escRef.current[id];}
     setAlarms(function(p){return p.map(function(a){return a.id===id?Object.assign({},a,{ack:true}):a})});
+    // Decirle al Service Worker que cancele las notificaciones repetitivas de esta alarma
+    if(navigator.serviceWorker&&navigator.serviceWorker.controller){
+      navigator.serviceWorker.controller.postMessage({type:'ack-alarm',id:id});
+    }
+    // Cerrar notificaciones del sistema con ese tag
+    if(navigator.serviceWorker){
+      navigator.serviceWorker.ready.then(function(reg){
+        return reg.getNotifications();
+      }).then(function(notifs){
+        notifs.filter(function(n){return n.data&&n.data.alarmId===id;}).forEach(function(n){n.close();});
+      }).catch(function(){});
+    }
+    // Marcar como atendida en Sheets
+    var urlA=cfR.current.scriptUrl||getGUrl()||SCRIPT_URL||'';
+    if(urlA)fetch(urlA,{method:'POST',headers:{'Content-Type':'text/plain'},
+      body:JSON.stringify({action:'ackAlarma',id:id,userName:user&&user.name||'Operador'})
+    }).catch(function(){});
   }
   function saveCoche(c){
     var isNew=!editC;
@@ -2618,7 +2677,14 @@ function App(){
             syncSt==='error'&&h('span',null,'⚠ '),
             sMsg
           ),
-          cfR.current&&cfR.current.scriptUrl&&syncSt==='idle'&&!sMsg&&h('span',{style:{fontSize:8,color:C.m,cursor:'pointer'},onClick:function(){mSync()}},'⟳ Sheets')
+          cfR.current&&cfR.current.scriptUrl&&syncSt==='idle'&&!sMsg&&h('span',{style:{fontSize:8,color:C.m,cursor:'pointer'},onClick:function(){mSync()}},'⟳ Sheets'),
+          h('button',{
+            onClick:function(){wakeOn?disableWakeLock():enableWakeLock()},
+            title:wakeOn?'Modo Monitor activo — click para desactivar':'Activar Modo Monitor (mantiene pantalla encendida y alarmas sonando)',
+            style:{background:wakeOn?C.g+'20':'none',border:'1px solid '+(wakeOn?C.g:C.b),color:wakeOn?C.g:C.m,borderRadius:5,padding:'2px 7px',cursor:'pointer',fontSize:9,fontWeight:wakeOn?700:400,display:'flex',alignItems:'center',gap:3,whiteSpace:'nowrap'}},
+            h('span',{style:{fontSize:10}},wakeOn?'📺':'📺'),
+            wakeOn?'Monitor ON':'Monitor'
+          )
         ),
         h('div',{className:'header-stats',style:{display:'flex',gap:4,alignItems:'center',flexWrap:'nowrap',overflow:'hidden'}},
           [['Libres',coches.filter(function(c){return c.status==='libre'}).length,C.t2],
@@ -2697,7 +2763,51 @@ try{
   var ml=document.createElement('link');ml.rel='manifest';ml.href=URL.createObjectURL(mb);document.head.appendChild(ml);
   // Service Worker
   if('serviceWorker' in navigator){
-    var sw='self.addEventListener("install",function(e){self.skipWaiting()});self.addEventListener("activate",function(e){e.waitUntil(clients.claim())});self.addEventListener("fetch",function(e){e.respondWith(caches.match(e.request).then(function(r){return r||fetch(e.request)}).catch(function(){return new Response("Sin conexion")}))});self.addEventListener("push",function(e){var d=e.data?e.data.json():{};e.waitUntil(self.registration.showNotification(d.title||"FREEZE CONTROL",{body:d.body||"Alerta",tag:d.tag||"fc",requireInteraction:true,vibrate:[300,100,300]}))});self.addEventListener("notificationclick",function(e){e.notification.close();e.waitUntil(clients.matchAll({type:"window"}).then(function(cs){var c=cs.find(function(x){return "focus" in x});return c?c.focus():clients.openWindow("./");})});';
+    var sw='self.addEventListener("install",function(e){self.skipWaiting()});'+
+      'self.addEventListener("activate",function(e){e.waitUntil(clients.claim())});'+
+      'self.addEventListener("fetch",function(e){e.respondWith(caches.match(e.request).then(function(r){return r||fetch(e.request)}).catch(function(){return new Response("Sin conexion")}))});'+
+      // Push desde backend (opcional)
+      'self.addEventListener("push",function(e){var d=e.data?e.data.json():{};e.waitUntil(self.registration.showNotification(d.title||"FREEZE CONTROL",{body:d.body||"Alerta",tag:d.tag||"fc",requireInteraction:true,vibrate:[300,100,300],data:d}))});'+
+      // Cuando el operador CIERRA la notificacion sin atenderla → repetir con escalamiento
+      'self.addEventListener("notificationclose",function(e){'+
+        'var d=e.notification.data||{};'+
+        'if(!d.repeatUntilAck||d.acked)return;'+
+        'var cnt=(d.repeatCount||0)+1;'+
+        'if(cnt>12)return;'+ // maximo 12 repeticiones (~15min)
+        // Frecuencia escalante: 60s→60s→60s, luego 30s→30s→30s, luego 15s
+        'var delay=cnt<=3?60000:cnt<=6?30000:15000;'+
+        'e.waitUntil(new Promise(function(res){'+
+          'setTimeout(function(){'+
+            'self.registration.showNotification('+
+              '"FREEZE CONTROL \u26a0 (sin atender)"'+
+            ',{'+
+              'body:d.body,'+
+              'tag:d.alarmId+"-r"+cnt,'+
+              'data:Object.assign({},d,{repeatCount:cnt}),'+
+              'requireInteraction:true,'+
+              'vibrate:cnt>6?[400,100,400,100,400,100,400]:[300,100,300],'+
+              'silent:false'+
+            '});'+
+            'res();'+
+          '},delay);'+
+        '}));'+
+      '});'+
+      // Click en la notificacion → abrir/enfocar la app
+      'self.addEventListener("notificationclick",function(e){'+
+        'e.notification.close();'+
+        'e.waitUntil(clients.matchAll({type:"window",includeUncontrolled:true}).then(function(cs){'+
+          'var c=cs.find(function(x){return "focus" in x});'+
+          'return c?c.focus():clients.openWindow("./");'+
+        '}));'+
+      '});'+
+      // Mensaje desde la app para cancelar repeticion (cuando se hace ack)
+      'self.addEventListener("message",function(e){'+
+        'if(e.data&&e.data.type==="ack-alarm"){'+
+          'self.registration.getNotifications().then(function(ns){'+
+            'ns.filter(function(n){return n.data&&n.data.alarmId===e.data.id;}).forEach(function(n){n.close();});'+
+          '});'+
+        '}'+
+      '});';
     var swb=new Blob([sw],{type:'application/javascript'});
     navigator.serviceWorker.register(URL.createObjectURL(swb),{scope:'./'}).catch(function(){});
   }
