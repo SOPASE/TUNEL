@@ -201,7 +201,20 @@ var DEF_C=[];  // Sin ejemplos — Sheets es la fuente de verdad
 var DEF_H=[];  // Sin ejemplos
 
 // ── MAPEO SHEETS ─────────────────────────────────────────
-function mapC(rows){return rows.filter(function(r){return r[0]}).map(function(r){return{id:String(r[0]),number:String(r[1]),status:r[2]||'libre',productName:r[3]||'',unitType:r[4]||'caja',units:+r[5]||0,weightPerUnit:+r[6]||0,weightUnit:r[7]||'lbs',totalLbs:+r[8]||0,tunnelId:r[9]||null,tunnelName:r[10]||'',ciclos:+r[11]||0,productLoadTime:r[12]?new Date(String(r[12])).getTime()||null:null,entryTime:r[13]?new Date(String(r[13])).getTime()||null:null,exitTime:r[14]?new Date(String(r[14])).getTime()||null:null,masterTime:null,lastProduct:null}})}
+function mapC(rows){return rows.filter(function(r){return r[0]}).map(function(r){return{
+  id:String(r[0]),number:String(r[1]),status:r[2]||'libre',
+  productName:r[3]||'',unitType:r[4]||'caja',
+  units:+r[5]||0,weightPerUnit:+r[6]||0,weightUnit:r[7]||'lbs',
+  totalLbs:+r[8]||0,tunnelId:r[9]||null,tunnelName:r[10]||'',
+  ciclos:+r[11]||0,
+  productLoadTime:r[12]?new Date(String(r[12])).getTime()||null:null,
+  entryTime:r[13]?new Date(String(r[13])).getTime()||null:null,
+  exitTime:r[14]?new Date(String(r[14])).getTime()||null:null,
+  lote:r[15]||'',                          // col 16: Lote
+  accumulatedTunnelMs:+r[16]||0,           // col 17: tiempo acumulado en tuneles
+  outsideStartTime:r[17]?+r[17]||null:null,// col 18: inicio conteo tiempo afuera
+  masterTime:null,lastProduct:null
+}})}
 function mapT(rows){return rows.filter(function(r){return r[0]}).map(function(r){return{id:String(r[0]),name:r[1]||'',type:r[2]||'amoniaco',capacityCoches:+r[3]||8,targetTemp:+r[5]||-30,checkIntervalMin:+r[6]||120,targetTimeHours:+r[7]||9,color:r[8]||'#00e888'}})}
 function mapH(rows){return rows.filter(function(r){return r[0]}).map(function(r){return{id:String(r[0]),number:r[1]||'',productName:r[2]||'',unitType:r[3]||'caja',units:+r[4]||0,weightPerUnit:+r[5]||0,weightUnit:r[6]||'lbs',totalLbs:+r[7]||0,tunnelId:r[8]||'',tunnelName:r[9]||'',tunnelType:r[10]||'',productLoadTime:r[11]?new Date(String(r[11])).getTime():null,entryTime:r[12]?new Date(String(r[12])).getTime():null,exitTime:r[13]?new Date(String(r[13])).getTime():null,outsideMin:+r[14]||0,horasEnTunel:+r[15]||0,shift:r[16]||'',userName:r[17]||'',lote:r[18]||''}})}
 function mapTL(rows){return rows.filter(function(r){return r[0]}).map(function(r){var aT=r[4]!==''&&r[4]!=null?+r[4]:null,pT=r[5]!==''&&r[5]!=null?+r[5]:null,tgt=r[6]!==''&&r[6]!=null?+r[6]:0,est=String(r[7]||'normal').toLowerCase();if(est==='ok')est='normal';if(est==='critico')est='falla';return{id:String(r[0]),tunnelId:r[1]||'',tunnelName:r[2]||'',tunnelType:r[3]||'',airTemp:aT,prodTemp:pT,temp:aT!=null?aT:(pT!=null?pT:0),targetTemp:tgt,estado:est,notes:r[8]||'',userName:r[9]||'',timestamp:r[10]?new Date(String(r[10])).getTime()||Date.now():Date.now(),turno:r[11]||'',rol:r[12]||'operador',userCargo:r[13]||''}}).sort(function(a,b){return b.timestamp-a.timestamp})}
