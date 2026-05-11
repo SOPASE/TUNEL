@@ -610,7 +610,7 @@ function genPreReleaseWA(t,inT,tLogs,userName,now){
     var ya=remaining<=0;
     lines.push('--- Coche #'+c.number+' ---');
     lines.push('Producto: *'+(c.productName||'-')+'*');
-    if(c.lote)lines.push('Lote: '+c.lote);
+    lines.push('Lote: '+(c.lote||'Sin lote'));
     lines.push('Cantidad: '+(c.units||0)+' '+(c.unitType==='funda'?'fundas':'cajas')+' x '+(c.weightPerUnit||0)+' '+(c.weightUnit||'lbs')+' = *'+(c.totalLbs||0).toLocaleString()+' lbs*');
     lines.push('Tiempo en tunel: *'+hh2+'h '+mm2+'min* (obj: '+t.targetTimeHours+'h)');
     if(lastLog){
@@ -693,7 +693,7 @@ function VDashboard(p){
                     var hh=Math.floor(el/3600000),mm=Math.floor((el%3600000)/60000);
                     var pr=Math.round(el/(t.targetTimeHours*3600000)*100);
                     var status=pr>=100?'TIEMPO CUMPLIDO':pr>=80?'Casi listo':'En proceso';
-                    lines.push('#'+c.number+' '+c.productName+(c.lote?' ['+c.lote+']':''));
+                    lines.push('#'+c.number+' '+c.productName+' ['+(c.lote||'Sin lote')+']');
                     lines.push('  '+(c.units||0)+' '+(c.unitType==='funda'?'fundas':'cajas')+' = *'+(c.totalLbs||0).toLocaleString()+' lbs*');
                     lines.push('  Tiempo: '+hh+'h '+mm+'min ('+pr+'%) \u2014 '+status);
                     lines.push('');
@@ -739,7 +739,7 @@ function VDashboard(p){
                       var hh=Math.floor(el/3600000),mm=Math.floor((el%3600000)/60000);
                       lines.push('--- Coche #'+c.number+' ---');
                       lines.push('Producto: *'+c.productName+'*');
-                      if(c.lote)lines.push('Lote: '+c.lote);
+                      lines.push('Lote: '+(c.lote||'Sin lote'));
                       lines.push('Cantidad: '+c.units+' '+(c.unitType==='funda'?'fundas':'cajas')+' = *'+(c.totalLbs||0).toLocaleString()+' lbs*');
                       lines.push('Tiempo en tunel: *'+hh+'h '+mm+'min*');
                       lines.push('');
@@ -1324,7 +1324,7 @@ function VHistorial(p){
       lines.push('');
       lines.push('--- Coche #'+hh.number+' ---');
       lines.push('Producto: *'+(hh.productName||'—')+'*');
-      if(hh.lote)lines.push('Lote: '+hh.lote);
+      lines.push('Lote: '+(hh.lote||'Sin lote'));
       lines.push('Cantidad: '+(hh.units||0)+' '+(hh.unitType==='funda'?'fundas':'cajas')+' x '+(hh.weightPerUnit||0)+' '+(hh.weightUnit||'lbs')+' = *'+(hh.totalLbs||0).toLocaleString()+' lbs*');
       lines.push('Tiempo en tunel: *'+hh2+'h '+mm2+'min*'+(tunel?' (obj: '+tunel.targetTimeHours+'h)':''));
       lines.push('Tiempo afuera antes de entrar: '+(hh.outsideMin||0)+'min');
@@ -1888,7 +1888,15 @@ function App(){
   var _co=useState(cache.coches&&cache.coches.length?cache.coches:DEF_C);var coches=_co[0],setCoches=_co[1];
   var _tl=useState(cache.tLogs||[]);var tLogs=_tl[0],setTLogs=_tl[1];
   var _hi=useState(cache.history&&cache.history.length?cache.history:DEF_H);var history=_hi[0],setHistory=_hi[1];
-  var _al=useState([]);var alarms=_al[0],setAlarms=_al[1];
+  // Alarmas: se cargan del cache para que persistan entre recargas
+  var _al=useState(function(){
+    var c=lc();
+    // Solo restaurar alarmas no-ack que tengan menos de 8 horas
+    var saved=(c.alarms||[]).filter(function(a){
+      return !a.ack&&(Date.now()-a.createdAt)<8*3600000;
+    });
+    return saved;
+  });var alarms=_al[0],setAlarms=_al[1];
   var _cf=useState(Object.assign({scriptUrl:getGUrl(),ntfyTopic:''},cfg));var config=_cf[0],setConfig=_cf[1];
   var _em=useState('');var email=_em[0],setEmail=_em[1];
   var _pw=useState('');var pass=_pw[0],setPass=_pw[1];
@@ -1962,7 +1970,10 @@ function App(){
   useEffect(function(){cfR.current=config;scfg(config);if(config.scriptUrl)setGUrl(config.scriptUrl)},[config]);
   useEffect(function(){hiR.current=history},[history]);
   useEffect(function(){tlR.current=tLogs;sc({coches:coR.current,tunnels:tuR.current,history:hiR.current,tLogs:tLogs})},[tLogs]);
-  useEffect(function(){alR.current=alarms},[alarms]);
+  useEffect(function(){alR.current=alarms;
+    // Guardar alarmas pendientes en cache para que persistan al recargar
+    var c=lc();sc(Object.assign({},c,{alarms:alarms.filter(function(a){return !a.ack;})}));
+  },[alarms]);
 
   useEffect(function(){var iv=setInterval(function(){setNow(Date.now())},10000);return function(){clearInterval(iv)}},[]);
 
@@ -2339,7 +2350,7 @@ function App(){
           var hMin=Math.floor(+en.horasEnTunel*60),hh=Math.floor(hMin/60),mm=hMin%60;
           lines.push('--- Coche #'+c.number+' ---');
           lines.push('Producto: *'+(c.productName||'-')+'*');
-          if(c.lote)lines.push('Lote: '+c.lote);
+          lines.push('Lote: '+(c.lote||'Sin lote'));
           lines.push('Cantidad: '+(c.units||0)+' '+(c.unitType==='funda'?'fundas':'cajas')+' x '+(c.weightPerUnit||0)+' '+(c.weightUnit||'lbs')+' = *'+(c.totalLbs||0).toLocaleString()+' lbs*');
           lines.push('Tiempo en tunel: *'+hh+'h '+mm+'min* (obj: '+t.targetTimeHours+'h)');
           var lastT=tLast[0];
